@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # --- Configuration ---
-API_BASE_URL_ENV = os.getenv("API_BASE_URL")
+API_BASE_URL = os.getenv("API_BASE_URL", "https://meg89-openenv-file-organizer-kanak.hf.space")
 HF_TOKEN = os.getenv("HF_TOKEN")
 MODEL_NAME = os.getenv("MODEL_NAME", "meta-llama/Llama-3.1-8B-Instruct")
 TASK_NAME = "file_sorting"
