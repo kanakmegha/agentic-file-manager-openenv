@@ -1,10 +1,9 @@
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import List, Optional, Any
 
 class FileAction(BaseModel):
     file_name: str = Field(..., description="The name of the file to be moved.")
-    category: str = Field(..., description="The target category: Finance, Work, or Personal.")
-
+    category: str = Field(..., description="The agent-defined category name for this file.")
 class FileObservation(BaseModel):
     remaining_files: List[str] = Field(..., description="List of files yet to be organized.")
     last_action_status: str = Field(..., description="Feedback on the last move (e.g., 'Success' or 'Wrong Category').")
