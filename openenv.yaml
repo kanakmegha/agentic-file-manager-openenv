@@ -1,0 +1,10 @@
+name: "semantic_file_organizer"
+version: "1.0.0"
+description: "AI agent environment for real-world file categorization."
+entrypoint: "app:app"
+port: 8000
+tasks:
+  - id: "sorting_task_1"
+    name: "Standard Sort"
+    difficulty: "easy"
+    description: "Categorize office and personal documents."
