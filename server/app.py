@@ -10,7 +10,10 @@ app = create_fastapi_app(
     FileObservation
 )
 
-if __name__ == "__main__":
+def main():
     import uvicorn
-    # 8000 is the standard port for OpenEnv containers
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # Make sure this matches your FastAPI variable name (usually 'app')
+    uvicorn.run("server.app:app", host="0.0.0.0", port=8000, reload=False)
+
+if __name__ == "__main__":
+    main()
