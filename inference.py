@@ -9,15 +9,24 @@ load_dotenv()
 
 # --- Configuration ---
 API_BASE_URL = os.getenv("API_BASE_URL", "https://meg89-openenv-file-organizer-kanak.hf.space")
-HF_TOKEN = os.getenv("HF_TOKEN")
+API_KEY = os.getenv("API_KEY")
+LLM_PROXY = os.getenv("API_BASE_URL")
 MODEL_NAME = os.getenv("MODEL_NAME", "meta-llama/Llama-3.1-8B-Instruct")
 TASK_NAME = "file_sorting"
 BENCHMARK = "semantic_organizer_v1"
 
+
+# 3. Initialize OpenAI client exactly as requested
+# We add '/v1' because the LiteLLM proxy expects standard OpenAI routing
 client = OpenAI(
-    base_url="https://router.huggingface.co/v1/", 
-    api_key=HF_TOKEN
+    base_url=f"{API_BASE_URL}/v1" if API_BASE_URL else None,
+    api_key=API_KEY
 )
+
+# --- FOR YOUR SYSTEM CALLS ---
+# When you call your FastAPI server (reset/step), use this:
+API_BASE_URL_ENV = API_BASE_URL
+
 
 # --- Logging Helpers ---
 def log_start(task: str, env: str, model: str) -> None:
