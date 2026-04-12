@@ -15,20 +15,24 @@ class FileOrganizerEnv(Environment):
     # We will let the app.py instances handle the sets
     self.state_data = None
 
+    # Inside env.py -> FileOrganizerEnv class
     def reset(self, episode_id: Optional[str] = None, seed: Optional[int] = None) -> FileObservation:
-    # Use the episode_id or a random choice if no ID is provided
-    # This ensures the validator gets different files if it asks for them
+        import random
+    # Use a seed if provided by the validator, otherwise random
+        if seed is not None:
+            random.seed(seed)
     
+    # Pick a random set from your 3 task_sets defined in __init__
         files_for_this_run = random.choice(self.task_sets)
     
         self.state_data = FileState(
         unsorted_files=list(files_for_this_run),
         sorted_files=[],
         total_files=len(files_for_this_run)
-    )
+        )
         return FileObservation(
         remaining_files=self.state_data.unsorted_files,
-        last_action_status="Task Initialized",
+        last_action_status="Task Reset Successful",
         reward=0.01, 
         done=False
     )
