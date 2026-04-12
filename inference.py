@@ -7,23 +7,23 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# --- MANDATORY CONFIGURATION (Hackathon Specs) ---
-# Use API_KEY primarily, fallback to HF_TOKEN as per instructions
+# --- MANDATORY CONFIGURATION (Phase 2 Proxy Compliance) ---
+# The judges inject these. We MUST use them exactly.
+API_BASE_URL = os.getenv("API_BASE_URL") 
 API_KEY = os.getenv("API_KEY") or os.getenv("HF_TOKEN")
-# Base URL must be the proxy provided by the team
-API_BASE_URL = os.getenv("API_BASE_URL") or "https://router.huggingface.co/v1"
 MODEL_NAME = os.getenv("MODEL_NAME") or "meta-llama/Llama-3.1-8B-Instruct"
 
 TASK_NAME = "file_sorting"
 BENCHMARK = "semantic_organizer_v1"
 
-# Initialize OpenAI client with the correct V1 endpoint for the proxy
+# CRITICAL: The base_url must point to the proxy URL provided in API_BASE_URL.
+# We append /v1 because the LiteLLM proxy follows standard OpenAI routing.
 client = OpenAI(
-    base_url=f"{API_BASE_URL}/v1" if "huggingface.co" not in API_BASE_URL else API_BASE_URL,
+    base_url=f"{API_BASE_URL}/v1" if API_BASE_URL else "https://router.huggingface.co/v1",
     api_key=API_KEY
 )
 
-# --- Logging Helpers (STRICT FORMAT) ---
+# --- Logging Helpers (STRICT HACKATHON FORMAT) ---
 def log_start(task: str, env: str, model: str) -> None:
     print(f"[START] task={task} env={env} model={model}", flush=True)
 
@@ -35,10 +35,9 @@ def log_step(step: int, action: str, reward: float, done: bool, error: Optional[
 def log_end(success: bool, steps: int, score: float, rewards: List[float]) -> None:
     rewards_str = ",".join(f"{r:.2f}" for r in rewards)
     success_val = str(success).lower()
-    # Note: Using 3 decimal places for score as per sample
     print(f"[END] success={success_val} steps={steps} score={score:.3f} rewards={rewards_str}", flush=True)
 
-# --- Agentic Logic: Global Decision Making ---
+# --- Agentic Logic ---
 def get_grouped_decisions(file_list: List[str]) -> Dict[str, str]:
     system_prompt = (
         "You are an expert file organizer. Look at the list of filenames provided. "
@@ -105,9 +104,10 @@ def main():
             if done:
                 break
         
-        # Normalize and clamp score between 0 and 1
+        # 4. Score Calculation (Strictly between 0 and 1)
         total_score = sum(rewards)
-        total_score = min(max(total_score, 0.001), 0.999) # Ensuring strictly between 0 and 1
+        # Clamping to ensure we satisfy Phase 3 requirements
+        total_score = min(max(total_score, 0.01), 0.99) 
         success = total_score >= 0.1
         
     except Exception as e:
