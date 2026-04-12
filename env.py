@@ -4,46 +4,34 @@ from openenv.core.env_server import Environment
 from models import FileAction, FileObservation, FileState
 
 class FileOrganizerEnv(Environment):
-    def __init__(self):
-        super().__init__()
-        # Ensure these match your models.py exactly
-        self.task_sets = [
-            ["invoice_march.pdf", "tax_return_2025.docs", "budget.xlsx"],
-            ["project_roadmap.pdf", "meeting_notes.txt", "architecture.png"],
-            ["family_photo.jpg", "vacation_itinerary.pdf", "song_backup.mp3"]
-        ]
-        self.current_task_idx = 0
-        self.state_data = None
+    # Inside env.py -> FileOrganizerEnv class
+def __init__(self):
+    super().__init__()
+    self.task_sets = [
+        ["invoice_march.pdf", "tax_return_2025.docs", "budget.xlsx"],
+        ["project_roadmap.pdf", "meeting_notes.txt", "architecture.png"],
+        ["family_photo.jpg", "vacation_itinerary.pdf", "song_backup.mp3"]
+    ]
+    # We will let the app.py instances handle the sets
+    self.state_data = None
 
-    def reset(self, episode_id: Optional[str] = None, seed: Optional[int] = None) -> FileObservation:
-        try:
-            # Select task based on index
-            files_for_this_run = self.task_sets[self.current_task_idx % len(self.task_sets)]
-            self.current_task_idx += 1
-            
-            # Initialize State
-            self.state_data = FileState(
-                unsorted_files=list(files_for_this_run),
-                sorted_files=[],
-                total_files=len(files_for_this_run)
-            )
-            
-            return FileObservation(
-                remaining_files=self.state_data.unsorted_files,
-                last_action_status=f"Task {self.current_task_idx} Initialized",
-                reward=0.01, 
-                done=False
-            )
-        except Exception as e:
-            # Fallback to prevent 500 error
-            print(f"Reset Error: {e}")
-            return FileObservation(
-                remaining_files=[],
-                last_action_status="Error during reset",
-                reward=0.0,
-                done=True
-            )
-
+def reset(self, episode_id: Optional[str] = None, seed: Optional[int] = None) -> FileObservation:
+    # Use the episode_id or a random choice if no ID is provided
+    # This ensures the validator gets different files if it asks for them
+    import random
+    files_for_this_run = random.choice(self.task_sets)
+    
+    self.state_data = FileState(
+        unsorted_files=list(files_for_this_run),
+        sorted_files=[],
+        total_files=len(files_for_this_run)
+    )
+    return FileObservation(
+        remaining_files=self.state_data.unsorted_files,
+        last_action_status="Task Initialized",
+        reward=0.01, 
+        done=False
+    )
     def step(self, action: FileAction) -> FileObservation:
         try:
             if self.state_data is None:
