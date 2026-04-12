@@ -7,21 +7,24 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# --- MANDATORY CONFIGURATION (Phase 2 Proxy Compliance) ---
-# The judges inject these. We MUST use them exactly.
-API_BASE_URL = os.getenv("API_BASE_URL") 
-API_KEY = os.getenv("API_KEY") or os.getenv("HF_TOKEN")
-MODEL_NAME = os.getenv("MODEL_NAME") or "meta-llama/Llama-3.1-8B-Instruct"
+# --- MANDATORY CONFIGURATION (Phase 2 & Phase 3 Compliance) ---
+# The validator log specifically asks to use these exact os.environ calls.
+API_BASE_URL = os.environ.get("API_BASE_URL") 
+API_KEY = os.environ.get("API_KEY")
+MODEL_NAME = os.environ.get("MODEL_NAME", "meta-llama/Llama-3.1-8B-Instruct")
 
 TASK_NAME = "file_sorting"
 BENCHMARK = "semantic_organizer_v1"
 
-# CRITICAL: The base_url must point to the proxy URL provided in API_BASE_URL.
-# We append /v1 because the LiteLLM proxy follows standard OpenAI routing.
+# 1. INITIALIZE OPENAI CLIENT EXACTLY AS REQUESTED
+# We append /v1 because the LiteLLM proxy uses standard OpenAI endpoint routing.
 client = OpenAI(
-    base_url=f"{API_BASE_URL}/v1" if API_BASE_URL else "https://router.huggingface.co/v1",
+    base_url=f"{API_BASE_URL}/v1", 
     api_key=API_KEY
 )
+
+# 2. API_BASE_URL_ENV for the environment FastAPI calls
+API_BASE_URL_ENV = API_BASE_URL
 
 # --- Logging Helpers (STRICT HACKATHON FORMAT) ---
 def log_start(task: str, env: str, model: str) -> None:
@@ -35,10 +38,14 @@ def log_step(step: int, action: str, reward: float, done: bool, error: Optional[
 def log_end(success: bool, steps: int, score: float, rewards: List[float]) -> None:
     rewards_str = ",".join(f"{r:.2f}" for r in rewards)
     success_val = str(success).lower()
+    # Scoring must be strictly within (0, 1) as per Phase 3 requirements
     print(f"[END] success={success_val} steps={steps} score={score:.3f} rewards={rewards_str}", flush=True)
 
-# --- Agentic Logic ---
+# --- Agentic Logic: Global Decision Making ---
 def get_grouped_decisions(file_list: List[str]) -> Dict[str, str]:
+    """
+    Agent logic using the LiteLLM proxy to decide categories.
+    """
     system_prompt = (
         "You are an expert file organizer. Look at the list of filenames provided. "
         "Decide on the minimum number of logical categories needed to organize them. "
@@ -62,25 +69,21 @@ def get_grouped_decisions(file_list: List[str]) -> Dict[str, str]:
         return {f: "Unsorted" for f in file_list}
 
 def main():
-    # Use the raw API_BASE_URL for the environment FastAPI calls
-    API_BASE_URL_ENV = API_BASE_URL
-
     log_start(task=TASK_NAME, env=BENCHMARK, model=MODEL_NAME)
     
     rewards = []
     steps_taken = 0
     success = False
-    total_score = 0.0
     
     try:
-        # 1. Reset Environment
+        # 1. Reset Environment using the provided BASE_URL
         reset_resp = requests.post(f"{API_BASE_URL_ENV}/reset", json={"episode_id": "ep001"}).json()
         files = reset_resp.get("observation", {}).get("remaining_files", [])
         
-        # 2. Agent decides the grouping
+        # 2. Agent decides grouping
         decision_map = get_grouped_decisions(files)
         
-        # 3. Execute actions
+        # 3. Execution
         for i, file_name in enumerate(files):
             step_idx = i + 1
             category = decision_map.get(file_name, "Miscellaneous")
@@ -104,16 +107,17 @@ def main():
             if done:
                 break
         
-        # 4. Score Calculation (Strictly between 0 and 1)
-        total_score = sum(rewards)
-        # Clamping to ensure we satisfy Phase 3 requirements
-        total_score = min(max(total_score, 0.01), 0.99) 
-        success = total_score >= 0.1
+        # 4. Final Score Logic (Ensuring strictly 0 < score < 1)
+        score = sum(rewards)
+        # Clamping to ensure we don't hit exactly 1.0 or 0.0
+        score = min(max(score, 0.01), 0.99)
+        success = score >= 0.1
         
     except Exception as e:
         print(f"[DEBUG] Execution Error: {e}")
+        score = 0.01
     finally:
-        log_end(success=success, steps=steps_taken, score=total_score, rewards=rewards)
+        log_end(success=success, steps=steps_taken, score=score, rewards=rewards)
 
 if __name__ == "__main__":
     main()
