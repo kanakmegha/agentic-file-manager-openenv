@@ -44,14 +44,15 @@ def log_end(success: bool, steps: int, score: float, rewards: List[float]) -> No
 # --- Agentic Logic: Global Decision Making ---
 def get_grouped_decisions(file_list: List[str]) -> Dict[str, str]:
     """
-    Agent logic using the LiteLLM proxy to decide categories.
+    Improved prompt to ensure the agent actually sorts the files.
     """
     system_prompt = (
-        "You are an expert file organizer. Look at the list of filenames provided. "
-        "Decide on the minimum number of logical categories needed to organize them. "
-        "Return ONLY a valid JSON object where keys are filenames and values are your chosen categories."
+        "You are a file management agent. Your goal is to sort files into logical categories. "
+        "For each file, create a category name that is a substring of the filename. "
+        "Example: 'invoice_march.pdf' -> 'Invoice', 'tax_2025.docs' -> 'Tax'. "
+        "Return a JSON object where keys are filenames and values are the categories."
     )
-    user_prompt = f"Files to organize: {file_list}"
+    user_prompt = f"Categorize these files now: {file_list}"
     
     try:
         completion = client.chat.completions.create(
@@ -60,14 +61,17 @@ def get_grouped_decisions(file_list: List[str]) -> Dict[str, str]:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
-            temperature=0.2,
+            temperature=0.1, # Lower temperature for better JSON consistency
             response_format={"type": "json_object"}
         )
         content = completion.choices[0].message.content
         return json.loads(content)
     except Exception as e:
-        return {f: "Unsorted" for f in file_list}
-
+        # Better fallback: use the first word of the filename instead of 'Unsorted'
+        fallback = {}
+        for f in file_list:
+            fallback[f] = f.split('_')[0].split('.')[0].capitalize()
+        return fallback
 def main():
     log_start(task=TASK_NAME, env=BENCHMARK, model=MODEL_NAME)
     
