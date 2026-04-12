@@ -2,12 +2,12 @@ import uuid
 from typing import List, Dict, Optional
 from openenv.core.env_server import Environment
 from models import FileAction, FileObservation, FileState
-
+import random
 class FileOrganizerEnv(Environment):
     # Inside env.py -> FileOrganizerEnv class
-def __init__(self):
-    super().__init__()
-    self.task_sets = [
+    def __init__(self):
+        super().__init__()
+        self.task_sets = [
         ["invoice_march.pdf", "tax_return_2025.docs", "budget.xlsx"],
         ["project_roadmap.pdf", "meeting_notes.txt", "architecture.png"],
         ["family_photo.jpg", "vacation_itinerary.pdf", "song_backup.mp3"]
@@ -15,18 +15,18 @@ def __init__(self):
     # We will let the app.py instances handle the sets
     self.state_data = None
 
-def reset(self, episode_id: Optional[str] = None, seed: Optional[int] = None) -> FileObservation:
+    def reset(self, episode_id: Optional[str] = None, seed: Optional[int] = None) -> FileObservation:
     # Use the episode_id or a random choice if no ID is provided
     # This ensures the validator gets different files if it asks for them
-    import random
-    files_for_this_run = random.choice(self.task_sets)
     
-    self.state_data = FileState(
+        files_for_this_run = random.choice(self.task_sets)
+    
+        self.state_data = FileState(
         unsorted_files=list(files_for_this_run),
         sorted_files=[],
         total_files=len(files_for_this_run)
     )
-    return FileObservation(
+        return FileObservation(
         remaining_files=self.state_data.unsorted_files,
         last_action_status="Task Initialized",
         reward=0.01, 
