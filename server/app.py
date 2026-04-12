@@ -3,14 +3,16 @@ from openenv.core.env_server import create_fastapi_app
 from models import FileAction, FileObservation
 from env import FileOrganizerEnv
 
-# Fix: We pass the Class 'FileOrganizerEnv', not the instance 'env_logic'
+# The validator wants the CLASS here, not a dictionary
 app = create_fastapi_app(
     FileOrganizerEnv, 
     FileAction, 
     FileObservation
 )
 
-if __name__ == "__main__":
+def main():
     import uvicorn
-    # 8000 is the standard port for OpenEnv containers
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
+if __name__ == "__main__":
+    main()
