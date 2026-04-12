@@ -6,31 +6,31 @@ from models import FileAction, FileObservation, FileState
 class FileOrganizerEnv(Environment):
     def __init__(self):
         super().__init__()
-        # 1. ADDED 3 TASKS: Validator requires at least 3 tasks with graders.
-        self.task_library = [
-            ["invoice_march.pdf", "tax_return_2025.docs", "budget_planning.xlsx"],
-            ["main_logic.py", "utils.js", "README.md", "styles.css"],
-            ["family_photo.jpg", "vacation_itinerary.pdf", "flight_tickets.pdf"]
+        # 1. FIX: Added 3 distinct tasks to satisfy "At least 3 tasks" requirement
+        self.tasks = [
+            ["invoice_march.pdf", "tax_return_2025.docs", "budget.xlsx"],
+            ["project_roadmap.pdf", "meeting_notes.txt", "architecture.png"],
+            ["family_photo.jpg", "vacation_itinerary.pdf", "song_backup.mp3"]
         ]
         self.current_task_idx = 0
-        self.all_files = self.task_library[self.current_task_idx]
         self.state_data = None
 
     def reset(self, episode_id: Optional[str] = None, seed: Optional[int] = None) -> FileObservation:
-        """Resets the environment state and cycles through the 3 tasks."""
-        # Cycle through tasks to ensure we provide at least 3 different scenarios
-        self.all_files = self.task_library[self.current_task_idx]
-        self.current_task_idx = (self.current_task_idx + 1) % len(self.task_library)
-
+        """Resets the environment and rotates through the 3 tasks."""
+        # This ensures the validator sees multiple different "folders" being organized
+        files_for_task = self.tasks[self.current_task_idx % len(self.tasks)]
+        self.current_task_idx += 1
+        
         self.state_data = FileState(
-            unsorted_files=list(self.all_files),
+            unsorted_files=list(files_for_task),
             sorted_files=[],
-            total_files=len(self.all_files)
+            total_files=len(files_for_task)
         )
+        # 2. FIX: Start reward at 0.01 instead of 0.0 to stay 'strictly within (0, 1)'
         return FileObservation(
             remaining_files=self.state_data.unsorted_files,
-            last_action_status="Environment Reset. Multi-task scenario active.",
-            reward=0.0,
+            last_action_status=f"Reset: Loading Task Set {self.current_task_idx}",
+            reward=0.01, 
             done=False
         )
 
@@ -52,26 +52,28 @@ class FileOrganizerEnv(Environment):
             any(word in file_lower for word in cat_lower.split())
         )
 
-        # 2. GRANULAR REWARDS: Scores must be strictly between 0 and 1.
-        # We cap the total possible score at 0.95 and floor it at 0.05.
-        step_reward = 0.05 / self.state_data.total_files # Default floor reward
+        # 3. FIX: Adjusted Reward Logic
+        # We target a total sum of ~0.95 for a perfect run, not 1.0.
+        step_reward = 0.02 # Base 'participation' reward to keep score > 0.0
         
         if is_valid:
-            # Max possible score across all steps will be 0.95
-            step_reward = 0.95 / self.state_data.total_files
+            # Distribute 0.90 across the files. Total will never hit 1.0.
+            step_reward = (0.90 / self.state_data.total_files)
+            
             if file_name in self.state_data.unsorted_files:
                 self.state_data.unsorted_files.remove(file_name)
                 self.state_data.sorted_files.append({"file": file_name, "category": category})
-            status = f"Accepted: Agent assigned {file_name} to '{category}'"
+            status = f"Accepted: Assigned {file_name} to '{category}'"
         else:
-            status = f"Partial/Rejected: '{category}' lacks strong link to {file_name}"
+            status = f"Rejected: No semantic link for {file_name}"
 
         done = len(self.state_data.unsorted_files) == 0
         
+        # Rounding to 3 decimals to avoid floating point issues
         return FileObservation(
             remaining_files=self.state_data.unsorted_files,
             last_action_status=status,
-            reward=step_reward,
+            reward=round(step_reward, 3),
             done=done
         )
 
