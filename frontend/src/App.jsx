@@ -68,6 +68,52 @@ const QueueTreeView = ({ structure, activeFileName }) => {
   );
 };
 
+// Summary component for the changeset
+const ChangesetView = ({ log }) => (
+  <div className="w-full max-w-3xl bg-neutral-900/50 border border-neutral-800 rounded-2xl overflow-hidden shadow-2xl">
+    <div className="p-6 border-b border-neutral-800 bg-neutral-900/50 flex items-center justify-between">
+      <h3 className="text-sm font-semibold tracking-wider text-neutral-400 uppercase">Deployment Changeset</h3>
+      <div className="flex gap-2">
+        <span className="px-3 py-1 bg-emerald-500/10 text-emerald-400 text-xs font-bold rounded-full border border-emerald-500/20">
+          {log.filter(l => l.status === 'success' && !l.note).length} MOVED
+        </span>
+        <span className="px-3 py-1 bg-neutral-500/10 text-neutral-400 text-xs font-bold rounded-full border border-neutral-800">
+          {log.filter(l => l.note === 'Existing').length} UNCHANGED
+        </span>
+      </div>
+    </div>
+    <div className="max-h-[400px] overflow-y-auto p-4 flex flex-col gap-3">
+      {log.map((item, idx) => {
+        const isStatic = item.note === 'Existing';
+        return (
+          <div key={idx} className={`flex flex-col gap-2 p-3 border rounded-xl group transition-colors ${isStatic ? 'bg-neutral-950/20 border-neutral-800/30 opacity-60' : 'bg-neutral-950/50 border-neutral-800/50 hover:border-neutral-700'}`}>
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium text-white truncate max-w-[200px]">{item.name}</span>
+              {item.status === 'success' ? (
+                isStatic ? (
+                  <div className="text-neutral-500 text-[10px] font-bold uppercase tracking-tighter">No Change Required</div>
+                ) : (
+                  <div className="flex items-center gap-1 text-emerald-400 text-[10px] font-bold uppercase tracking-tighter">
+                    <Check className="w-3 h-3" /> Moved
+                  </div>
+                )
+              ) : (
+                <div className="text-rose-500 text-[10px] font-bold uppercase tracking-tighter">Failed</div>
+              )}
+            </div>
+            <div className="flex items-center gap-2 text-[10px] font-mono text-neutral-500 overflow-hidden">
+              <span className="truncate flex-1 text-neutral-600 italic">{item.from}</span>
+              <ChevronRight className="w-3 h-3 flex-shrink-0" />
+              <span className={`truncate flex-1 ${isStatic ? 'text-neutral-500' : 'text-indigo-300'}`}>{item.to}</span>
+            </div>
+            {item.error && <p className="text-[10px] text-rose-400 italic">Error: {item.error}</p>}
+          </div>
+        );
+      })}
+    </div>
+  </div>
+);
+
 export default function App() {
   const [directoryHandle, setDirectoryHandle] = useState(null);
   const [unsortedFiles, setUnsortedFiles] = useState([]); // array of file objects
@@ -82,6 +128,7 @@ export default function App() {
   const [organizing, setOrganizing] = useState(false);
   const [success, setSuccess] = useState(false);
   const [loadingMsg, setLoadingMsg] = useState("");
+  const [executionLog, setExecutionLog] = useState([]);
 
   const getFilesRecursively = async (dirHandle, relPath = '') => {
     let files = [];
@@ -276,41 +323,40 @@ export default function App() {
         }
       }
       
+      const log = [];
       for (const [fileName, stageData] of Object.entries(stagedState)) {
         const { fileObj, path } = stageData;
-        
-        // Clean up path strings for comparison
         const targetPath = path.replace(/^\//, '').replace(/\/$/, '');
-        const currentPath = fileObj.currentDir.replace(/^\//, '').replace(/\/$/, '');
+        const currentPath = fileObj.relative_path;
+        const targetFull = targetPath + "/" + fileName;
 
-        // If target matches current, skip the I/O
-        if (targetPath === currentPath) {
-           console.log(`[EXEC] skipping ${fileName}, already in ${targetPath}`);
-           continue; 
-        }
-
-        const parts = targetPath.split('/').filter(Boolean);
-        
-        let targetFolderHandle = directoryHandle;
-        for (const part of parts) {
-           targetFolderHandle = await targetFolderHandle.getDirectoryHandle(part, { create: true });
-        }
-        
-        const fileData = await fileObj.handle.getFile();
-        
-        const writableFileHandle = await targetFolderHandle.getFileHandle(fileName, { create: true });
-        const writableStream = await writableFileHandle.createWritable();
-        await writableStream.write(fileData);
-        await writableStream.close();
-        
-        // Remove from the REAL parent handle, not just root
         try {
-           await fileObj.parentHandle.removeEntry(fileName);
-        } catch(e) {
-           console.warn(`[CLEANUP] Could not remove ${fileName} from original parent.`, e);
+          if (targetPath === fileObj.parentHandle.name || (targetPath === "" && fileObj.parentHandle === directoryHandle)) {
+             log.push({ name: fileName, from: currentPath, to: targetFull, status: 'success', note: 'Existing' });
+             continue;
+          }
+
+          const parts = targetPath.split('/').filter(Boolean);
+          let targetFolderHandle = directoryHandle;
+          for (const part of parts) {
+             targetFolderHandle = await targetFolderHandle.getDirectoryHandle(part, { create: true });
+          }
+          
+          const fileData = await fileObj.handle.getFile();
+          const writableFileHandle = await targetFolderHandle.getFileHandle(fileName, { create: true });
+          const writableStream = await writableFileHandle.createWritable();
+          await writableStream.write(fileData);
+          await writableStream.close();
+          
+          await fileObj.parentHandle.removeEntry(fileName);
+          log.push({ name: fileName, from: currentPath, to: targetFull, status: 'success' });
+        } catch (e) {
+          console.error(e);
+          log.push({ name: fileName, from: currentPath, to: targetFull, status: 'error', error: e.message });
         }
       }
 
+      setExecutionLog(log);
       setSuccess(true);
     } catch (e) {
       console.error(e);
@@ -498,17 +544,26 @@ export default function App() {
           ) : success ? (
             <motion.div
               key="success"
-              initial={{ opacity: 0, scale: 0.9 }}
+              initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
-              className="text-center"
+              className="w-full flex flex-col items-center"
             >
-              <div className="w-24 h-24 bg-emerald-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
-                <Check className="w-12 h-12 text-emerald-400" />
+              <div className="w-16 h-16 bg-emerald-500/20 rounded-full flex items-center justify-center mb-6">
+                <Check className="w-8 h-8 text-emerald-400" />
               </div>
-              <h2 className="text-4xl font-semibold mb-4 text-white">Hierarchy Deployed!</h2>
-              <p className="text-neutral-400 max-w-md mx-auto">
-                Your workspace is completely normalized. Check your computer to see the newly crafted folder boundaries.
+              <h2 className="text-3xl font-semibold mb-2 text-white">Hierarchy Deployed</h2>
+              <p className="text-neutral-400 max-w-md mx-auto mb-10 text-center text-sm">
+                The architecture has been successfully written to your disk. Review the changeset below.
               </p>
+              
+              <ChangesetView log={executionLog} />
+              
+              <button 
+                 onClick={() => window.location.reload()}
+                 className="mt-8 py-3 px-8 rounded-xl font-medium text-neutral-400 hover:text-white transition-colors bg-neutral-900 border border-neutral-800 hover:border-neutral-700"
+              >
+                Close & Restart
+              </button>
             </motion.div>
           ) : (
             <motion.div
