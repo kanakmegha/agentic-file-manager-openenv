@@ -43,7 +43,7 @@ The project consists of three main components:
     Create a `.env` file with the following:
     ```env
     API_BASE_URL="http://localhost:8000"
-    HF_TOKEN="your_huggingface_token"
+    API_KEY="your_huggingface_token"
     MODEL_NAME="meta-llama/Llama-3.1-8B-Instruct"
     ```
 
