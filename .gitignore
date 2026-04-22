@@ -36,4 +36,4 @@ ENV/
 .LSOverride
 
 # Docker
-.docker/
+.docker/node_modules
