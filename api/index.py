@@ -5,25 +5,23 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from typing import List, Dict
+from typing import List, Dict, Optional
 from pydantic import BaseModel
 import os
 import json
 from huggingface_hub import InferenceClient
 from dotenv import load_dotenv
 
-from openenv.core.env_server import create_fastapi_app
+# Manual replacement for openenv-core
 from models import FileAction, FileObservation
 from env import FileOrganizerEnv
 
 load_dotenv(override=True)
 
-# Fix: We pass the Class 'FileOrganizerEnv', not the instance 'env_logic'
-app = create_fastapi_app(
-    FileOrganizerEnv, 
-    FileAction, 
-    FileObservation
-)
+# Standard FastAPI initialization
+app = FastAPI()
+# Global persistent environment instance
+env = FileOrganizerEnv()
 
 app.add_middleware(
     CORSMiddleware,
@@ -121,6 +119,16 @@ def call_hf_inference(system_prompt: str, user_prompt: str, fallback_files: List
 @app.get("/")
 def health_check():
     return {"status": "success", "message": "Semantic File Organizer API is running"}
+
+@app.get("/reset")
+def reset(episode_id: Optional[str] = None):
+    # Standard OpenEnv reset endpoint
+    return env.reset()
+
+@app.post("/step")
+def step(action: FileAction):
+    # Standard OpenEnv step endpoint
+    return env.step(action)
 
 @app.post("/analyze-structure")
 def analyze_structure(payload: AnalyzePayload):

@@ -15,8 +15,7 @@ dependencies = [
     "pydantic",
     "python-dotenv",
     "openai",
-    "requests",
-    "openenv-core"
+    "requests"
 ]
 requires-python = ">=3.10"
 

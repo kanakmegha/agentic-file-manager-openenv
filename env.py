@@ -1,14 +1,10 @@
-import uuid
-from typing import List, Dict, Optional
-from openenv.core.env_server import Environment
 from models import FileAction, FileObservation, FileState
 
 # Global counter to cycle through tasks every time the class is instantiated
 _TASK_COUNTER = 0
 
-class FileOrganizerEnv(Environment):
+class FileOrganizerEnv:
     def __init__(self):
-        super().__init__()
         global _TASK_COUNTER
         self.task_sets = [
             ["invoice_march.pdf", "tax_return_2025.docs", "budget.xlsx"],
