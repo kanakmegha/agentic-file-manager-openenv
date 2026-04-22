@@ -114,6 +114,8 @@ const ChangesetView = ({ log }) => (
   </div>
 );
 
+const BASE_URL = "/api";
+
 export default function App() {
   const [directoryHandle, setDirectoryHandle] = useState(null);
   const [unsortedFiles, setUnsortedFiles] = useState([]); // array of file objects
@@ -177,7 +179,9 @@ export default function App() {
 
   const fetchStructureAnalysis = async (fileNames) => {
     try {
-      const res = await fetch('/api/analyze-structure', {
+      const url = `${BASE_URL}/analyze-structure`;
+      console.log('Fetching from:', url);
+      const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ files: fileNames })
@@ -212,7 +216,9 @@ export default function App() {
   const reEvaluateStructure = async (remainingNames, overrideName, overridePath) => {
     try {
       setLoadingMsg("Re-evaluating based on your pattern...");
-      const res = await fetch('/api/reevaluate-structure', {
+      const url = `${BASE_URL}/reevaluate-structure`;
+      console.log('Fetching from:', url);
+      const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
