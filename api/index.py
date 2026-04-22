@@ -1,24 +1,46 @@
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
-from fastapi.middleware.cors import CORSMiddleware
-from typing import List, Dict, Optional
-from pydantic import BaseModel
-import os
-import json
-import traceback
-from huggingface_hub import InferenceClient
-from dotenv import load_dotenv
+# --- EMERGENCY BOOTSTRAP wrapper for Vercel debugging ---
+try:
+    from fastapi import FastAPI, Request
+    from fastapi.responses import JSONResponse
+    from fastapi.middleware.cors import CORSMiddleware
+    from typing import List, Dict, Optional, Any
+    from pydantic import BaseModel
+    import os
+    import json
+    import traceback
+    from huggingface_hub import InferenceClient
+    from dotenv import load_dotenv
 
-# Local Relative Imports (Best practice for Vercel functions)
-from .models import FileAction, FileObservation
-from .env import FileOrganizerEnv
+    # Local Relative Imports
+    from .models import FileAction, FileObservation
+    from .env import FileOrganizerEnv
 
-load_dotenv(override=True)
+    load_dotenv(override=True)
 
-# Standard FastAPI initialization
-app = FastAPI()
-# Global persistent environment instance
-env = FileOrganizerEnv()
+    # Standard FastAPI initialization
+    app = FastAPI()
+    # Global persistent environment instance
+    env = FileOrganizerEnv()
+
+except Exception as boot_err:
+    # If the app fails to even LOAD (NameError, ImportError, etc.), 
+    # we create this dummy app to show you the error in the browser.
+    from fastapi import FastAPI
+    from fastapi.responses import JSONResponse
+    import traceback
+    app = FastAPI()
+    @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
+    async def emergency_debug_route(path: str):
+        return JSONResponse(
+            status_code=500,
+            content={
+                "status": "boot_error",
+                "message": str(boot_err),
+                "traceback": traceback.format_exc(),
+                "hint": "This error happened during Python import/startup time."
+            }
+        )
+# -----------------------------------------------------
 
 app.add_middleware(
     CORSMiddleware,
