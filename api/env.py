@@ -1,4 +1,5 @@
-from models import FileAction, FileObservation, FileState
+from typing import List, Dict, Optional, Any
+from .models import FileAction, FileObservation, FileState
 
 # Global counter to cycle through tasks every time the class is instantiated
 _TASK_COUNTER = 0

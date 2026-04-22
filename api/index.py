@@ -1,20 +1,17 @@
-import sys
-from pathlib import Path
-# Add parent directory to sys.path so we can find env.py and models.py
-sys.path.append(str(Path(__file__).parent.parent))
-
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List, Dict, Optional
 from pydantic import BaseModel
 import os
 import json
+import traceback
 from huggingface_hub import InferenceClient
 from dotenv import load_dotenv
 
-# Manual replacement for openenv-core
-from models import FileAction, FileObservation
-from env import FileOrganizerEnv
+# Local Relative Imports (Best practice for Vercel functions)
+from .models import FileAction, FileObservation
+from .env import FileOrganizerEnv
 
 load_dotenv(override=True)
 
@@ -30,6 +27,23 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Global Exception Handler to capture 500 errors for debugging
+@app.middleware("http")
+async def catch_exceptions_middleware(request: Request, call_next):
+    try:
+        return await call_next(request)
+    except Exception as exc:
+        print(f"[CRITICAL ERROR] {exc}")
+        traceback.print_exc()
+        return JSONResponse(
+            status_code=500,
+            content={
+                "status": "error",
+                "message": str(exc),
+                "traceback": traceback.format_exc()
+            }
+        )
 
 class FileEntry(BaseModel):
     name: str
