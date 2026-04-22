@@ -113,6 +113,10 @@ def call_hf_inference(system_prompt: str, user_prompt: str, fallback_files: List
         print(f"[ERROR HF API] {e}")
         return {f: {"path": f.split('.')[0].capitalize(), "reason": f"API Error: {str(e)}"} for f in fallback_files}
 
+@app.get("/")
+def health_check():
+    return {"status": "success", "message": "Semantic File Organizer API is running"}
+
 @app.post("/analyze-structure")
 def analyze_structure(payload: AnalyzePayload):
     print(f"[DEBUG analyze-structure] received {len(payload.files)} files.")
