@@ -186,6 +186,22 @@ def analyze_structure(payload: AnalyzePayload):
     print("[DEBUG analyze-structure] Successfully resolved structure.")
     return {"structure": content}
 
+@app.api_route("/{path_name:path}", methods=["GET", "POST", "PUT", "DELETE"])
+async def debug_catch_all(request: Request, path_name: str):
+    # This route only hits if no other route matched.
+    # It helps us see exactly what FastAPI is receiving.
+    return JSONResponse(
+        status_code=404,
+        content={
+            "status": "not_matched",
+            "message": "No specific route found for this path.",
+            "path_name": path_name,
+            "full_url": str(request.url),
+            "root_path": request.scope.get("root_path"),
+            "fastapi_path": request.scope.get("path")
+        }
+    )
+
 @app.post("/reevaluate-structure")
 def reevaluate_structure(payload: ReevaluatePayload):
     system_prompt = (
