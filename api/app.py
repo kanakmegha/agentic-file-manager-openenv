@@ -105,22 +105,28 @@ class ReevaluatePayload(BaseModel):
 
 def _apply_heuristic(files_metadata: dict) -> dict:
     from collections import defaultdict
+    import os
     counts = defaultdict(int)
     
     # Pass 1: Normalize paths and build frequency count
     for f, m in files_metadata.items():
         path = m.get("path", "").strip("/")
+        
+        # Rule: If the suggested path ends with the filename, strip it.
+        # (Implementing user's explicit request)
+        if path.endswith(f):
+            path = os.path.dirname(path)
+            
         parts = [p for p in path.split("/") if p]
         
-        # Rule 1: No Duplicate Names (folder name matching file name)
-        # We strip segments that are essentially the filename
+        # Additional Rule: No Duplicate Names (folder name matching file name base)
         base_name = f.split(".")[0].lower()
         cleaned_parts = [p for p in parts if p.lower() not in base_name and base_name not in p.lower()]
         
         if not cleaned_parts:
             m["path"] = "Uncategorized"
         else:
-            # Rule 2: Limit Depth to 2 for better hierarchy
+            # Rule: Limit Depth to 2 for better hierarchy
             m["path"] = "/".join(cleaned_parts[:2])
             
         counts[m["path"]] += 1
@@ -134,10 +140,6 @@ def _apply_heuristic(files_metadata: dict) -> dict:
                 # Move single-file subfolders to the parent level
                 m["path"] = parts[0]
                 m["reason"] = m.get("reason", "") + " (Flattened: Single-file category)"
-            elif path != "Uncategorized":
-                # If it's a single file in a top-level folder, move to Uncategorized or keep if broad
-                # For now, we allow broad top-level folders but note them.
-                pass
                 
     return files_metadata
 
@@ -209,11 +211,11 @@ def analyze_structure(payload: AnalyzePayload):
     print(f"[Vercel Route] /analyze-structure hit with {len(payload.files)} files.")
     
     system_prompt = (
-        "You are an expert File System Architect. Your goal is to simplify a directory according to the '3 Golden Rules':\n"
-        "1. NO DUPLICATE NAMES: A file must NEVER be in a folder that has the same name as itself.\n"
-        "2. THRESHOLD GROUPING: Only create a sub-category folder (e.g., 'Books/Finance') if there are AT LEAST 2 files that belong there. If only 1 file exists, keep it in the parent category (e.g., 'Books').\n"
-        "3. THE LEAF RULE: Prioritize 'Grouping' over 'Nesting'. Max depth is 2. Files should be 'Leaf Nodes' directly under broad semantic categories.\n"
-        "Forbid catch-all names like 'Miscellaneous' or 'Other'. Return a JSON object where keys are filenames and values are objects with 'path' and 'reason'."
+        "You are an expert file organizer. Your goal is to map filenames to a SIMPLE category string. "
+        "DO NOT include the filename in the category string. "
+        "Example: {'book.pdf': 'Books/Finance'}. "
+        "DO NOT return {'book.pdf': 'Books/Finance/book.pdf'}. "
+        "Forbid catch-all names like 'Miscellaneous' or 'Other'. Group by topic (Assets, Finance, Productivity, etc)."
     )
     user_prompt = f"Analyze these files: {[{'name': f.name, 'rel': f.relative_path} for f in payload.files]}"
     
