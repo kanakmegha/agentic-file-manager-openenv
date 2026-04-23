@@ -5,12 +5,17 @@ FileAction = Any
 FileObservation = Any
 
 try:
+    import os
+    import sys
+    # Add the current directory to sys.path for Vercel discovery of local modules
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    if current_dir not in sys.path:
+        sys.path.append(current_dir)
+
     from fastapi import FastAPI, Request
     from fastapi.responses import JSONResponse
     from fastapi.middleware.cors import CORSMiddleware
-    from typing import List, Dict, Optional, Any
     from pydantic import BaseModel
-    import os
     import json
     import traceback
     from huggingface_hub import InferenceClient
