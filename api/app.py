@@ -107,52 +107,46 @@ def _apply_heuristic(files_metadata: dict) -> dict:
     from collections import defaultdict
     import os
     counts = defaultdict(int)
-    results = {}
     
-    # Pass 1: Handle formats and strip filename from path
+    # Pass 1: Aggressive Overlap Filtering and Path Sanitization
     for f, m in files_metadata.items():
-        # Support both string and dict formats (AI can vary)
+        # Handle cases where AI returns a string instead of an object
         if isinstance(m, str):
             path = m.strip("/")
-            meta = {"path": path, "reason": "Categorized"}
+            m = {"path": path, "reason": "AI Recommendation"}
+            files_metadata[f] = m
         else:
             path = m.get("path", "").strip("/")
-            meta = m
-
-        # Rule: Explicitly strip if the path ends with the filename
+            
+        # Target path cleanup
         if path.endswith(f):
             path = os.path.dirname(path)
             
         parts = [p for p in path.split("/") if p]
         
-        # Rule: Filter out any folder part that is similar to the filename
-        # (Preventing TheDip.pdf/TheDip.pdf)
-        base_name = f.split(".")[0].lower().replace(" ", "").replace("-", "")
+        # Rule: Aggressive Overlap Check
+        # If any part of the folder name is similar to the filename, strip it.
+        base_name = f.split(".")[0].lower().replace(" ", "").replace("-", "").replace("_", "")
         cleaned_parts = []
         for p in parts:
-            p_clean = p.lower().replace(" ", "").replace("-", "")
-            # If folder is basically a substring of the filename, skip it
-            if p_clean in base_name or base_name in p_clean:
-                continue
+            p_clean = p.lower().replace(" ", "").replace("-", "").replace("_", "")
+            if len(p_clean) > 2 and (p_clean in base_name or base_name in p_clean):
+                continue # Skip redundant folders
             cleaned_parts.append(p)
         
-        # Limit Depth to 2 and ensure at least one part exists
-        final_path = "/".join(cleaned_parts[:2]) if cleaned_parts else "Uncategorized"
-        meta["path"] = final_path
-        results[f] = meta
-        counts[final_path] += 1
+        m["path"] = "/".join(cleaned_parts[:2]) if cleaned_parts else "Uncategorized"
+        counts[m["path"]] += 1
 
-    # Pass 2: Threshold Grouping (At least 2 files)
-    for f, m in results.items():
+    # Pass 2: Threshold Grouping (at least 2 files)
+    for f, m in files_metadata.items():
         path = m["path"]
         if counts[path] < 2:
             parts = path.split("/")
             if len(parts) > 1:
-                # Move single-file subfolders to parent level
                 m["path"] = parts[0]
-                m["reason"] = m.get("reason", "") + " (Grouped for density)"
-                
-    return results
+                m["reason"] = m.get("reason", "") + " (Flattened: Single-file category)"
+        
+    return files_metadata
 
 def call_hf_inference(system_prompt: str, user_prompt: str, fallback_files: List[str]) -> dict:
     try:
@@ -222,13 +216,13 @@ def analyze_structure(payload: AnalyzePayload):
     print(f"[Vercel Route] /analyze-structure hit with {len(payload.files)} files.")
     
     system_prompt = (
-        "You are an expert file organizer. Map each filename to a semantic category object.\n"
-        "RULES:\n"
-        "1. Max depth is 2 folders.\n"
-        "2. NEVER include the filename in the category path.\n"
-        "3. Only use a sub-folder if at least 2 files share it.\n"
-        "FORMAT: {'file.pdf': {'path': 'Category/Sub', 'reason': '...'}}\n"
-        "Forbid catch-all names like 'Miscellaneous'."
+        "You are an expert file organizer. For each file, identify a BROAD semantic category. "
+        "Example output: {'rich_dad.pdf': {'path': 'Finance', 'reason': 'Personal Finance book'}}. "
+        "IMPORTANT RULES:\n"
+        "1. NEVER create a folder that shares words with the filename (e.g., NO 'TheDip/TheDip.pdf').\n"
+        "2. FORBID single-file categories. If only one 'Finance' file exists, keep it at the root.\n"
+        "3. MAX DEPTH IS 2. Prioritize horizontal grouping over vertical nesting.\n"
+        "Return ONLY the raw JSON object."
     )
     user_prompt = f"Analyze these files: {[{'name': f.name, 'rel': f.relative_path} for f in payload.files]}"
     
