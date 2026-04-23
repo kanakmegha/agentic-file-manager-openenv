@@ -1,3 +1,4 @@
+from typing import Any, List, Dict, Optional
 # Ensure app is defined globally even before the try block to avoid NameErrors
 app = None
 FileAction = Any
