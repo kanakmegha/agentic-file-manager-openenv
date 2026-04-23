@@ -1,4 +1,6 @@
-# --- EMERGENCY BOOTSTRAP wrapper for Vercel debugging ---
+# Ensure app is defined globally even before the try block to avoid NameErrors
+app = None
+
 try:
     from fastapi import FastAPI, Request
     from fastapi.responses import JSONResponse
@@ -12,22 +14,25 @@ try:
     from dotenv import load_dotenv
 
     # Local Imports
-    from models import FileAction, FileObservation
-    from env import FileOrganizerEnv
+    import models
+    import env as env_module
 
     load_dotenv(override=True)
 
     # Standard FastAPI initialization with root_path for Vercel routing
     app = FastAPI(root_path="/api")
     # Global persistent environment instance
-    env = FileOrganizerEnv()
+    env = env_module.FileOrganizerEnv()
+
+    # Convenience aliases for models
+    FileAction = models.FileAction
+    FileObservation = models.FileObservation
 
 except Exception as boot_err:
-    # If the app fails to even LOAD (NameError, ImportError, etc.), 
-    # we create this dummy app to show you the error in the browser.
     from fastapi import FastAPI
     from fastapi.responses import JSONResponse
     import traceback
+    # Redefine app as an emergency debug server
     app = FastAPI()
     @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
     async def emergency_debug_route(path: str):
@@ -37,7 +42,7 @@ except Exception as boot_err:
                 "status": "boot_error",
                 "message": str(boot_err),
                 "traceback": traceback.format_exc(),
-                "hint": "This error happened during Python import/startup time."
+                "hint": "This error happened during the Python import/startup phase in api/app.py."
             }
         )
 # -----------------------------------------------------
