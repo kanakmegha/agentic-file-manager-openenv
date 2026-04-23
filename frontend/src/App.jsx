@@ -24,9 +24,10 @@ const TreeView = ({ structure }) => {
               {isDir ? (
                 isExp ? <ChevronDown className="w-3 h-3 text-neutral-500" /> : <ChevronRight className="w-3 h-3 text-neutral-500" />
               ) : <span className="w-3 h-3" />}
-              {isDir ? <Folder className="w-4 h-4 text-indigo-400" /> : <File className={`w-4 h-4 ${node.staged ? 'text-emerald-400' : 'text-neutral-500 opacity-50'}`} />}
-              <span className={`text-sm ${isDir ? 'text-indigo-200 font-medium' : node.staged ? 'text-emerald-200/80 font-medium' : 'text-neutral-500 italic truncate'}`}>
+              {isDir ? <Folder className="w-4 h-4 text-indigo-400" /> : <File className={`w-4 h-4 ${node.staged ? 'text-emerald-400' : 'text-neutral-500 opacity-50'} ${node.moved ? 'text-amber-400 drop-shadow-[0_0_5px_rgba(251,191,36,0.3)]' : ''}`} />}
+              <span className={`text-sm ${isDir ? 'text-indigo-200 font-medium' : node.staged ? 'text-emerald-200/80 font-medium' : 'text-neutral-500 italic truncate'} ${!isDir && node.moved ? 'text-amber-200' : ''}`}>
                 {name}
+                {!isDir && node.moved && <span className="ml-2 text-[8px] bg-amber-500/20 text-amber-500 px-1 rounded uppercase tracking-tighter">NEW LOCATION</span>}
               </span>
             </div>
             {isDir && isExp && node.children && <TreeView structure={node.children} />}
@@ -130,6 +131,7 @@ export default function App() {
   const [success, setSuccess] = useState(false);
   const [loadingMsg, setLoadingMsg] = useState("");
   const [executionLog, setExecutionLog] = useState([]);
+  const [optimizationInfo, setOptimizationInfo] = useState({ possible: true, message: "" });
 
   const getFilesRecursively = async (dirHandle, relPath = '') => {
     let files = [];
@@ -203,6 +205,14 @@ export default function App() {
       try {
          const data = JSON.parse(textResponse);
          setAnalyzedStructure(data.structure || {});
+         if (data.optimization_possible === false) {
+           setOptimizationInfo({ 
+             possible: false, 
+             message: data.message || "Structure is already optimized." 
+           });
+         } else {
+           setOptimizationInfo({ possible: true, message: "" });
+         }
       } catch (e) {
          console.error("JSON parse error:", e, "Payload:", textResponse.substring(0, 200));
          setAnalyzedStructure({});
@@ -311,6 +321,22 @@ export default function App() {
 
     mergeIntoTree(projectedObj, false);
     mergeIntoTree(stagedObj, true);
+
+    // Compute diffs against original structure
+    const applyDiffs = (node, path = "") => {
+      Object.entries(node).forEach(([name, val]) => {
+        if (val.type === 'directory') {
+          applyDiffs(val.children, path ? `${path}/${name}` : name);
+        } else {
+          // It's a file. Check if it was moved.
+          const fileObj = unsortedFiles.find(f => f.name === name);
+          const currentPath = fileObj?.relative_path.replace(name, "").replace(/\/$/, "") || "";
+          val.moved = path !== currentPath;
+        }
+      });
+    };
+    applyDiffs(root);
+
     return root;
   };
 
@@ -475,6 +501,13 @@ export default function App() {
                 <div className="mb-10 text-center">
                   <h2 className="text-3xl font-semibold tracking-tight text-white mb-2 line-clamp-1">{currentFileObj.name}</h2>
                   <p className="text-xs text-neutral-500 font-mono tracking-wider">{currentFileObj.relative_path}</p>
+                  
+                  {!optimizationInfo.possible && (
+                    <div className="mt-4 inline-flex items-center gap-2 px-4 py-1.5 bg-emerald-500/20 border border-emerald-500/30 rounded-full">
+                      <Check className="w-3.5 h-3.5 text-emerald-400" />
+                      <span className="text-xs font-bold text-emerald-400 uppercase tracking-widest">Perfectly Organized</span>
+                    </div>
+                  )}
                 </div>
 
                 <div className="bg-neutral-950/50 rounded-xl p-6 mb-8 border border-neutral-800/50 text-center relative overflow-hidden group">
@@ -528,10 +561,10 @@ export default function App() {
                       </button>
                       <button 
                          onClick={() => nextFile()}
-                         disabled={loadingMsg !== ""}
-                         className="flex-1 py-3 px-6 rounded-xl font-medium text-emerald-950 bg-emerald-500 hover:bg-emerald-400 transition-colors flex items-center justify-center shadow-[0_0_20px_rgba(16,185,129,0.3)] hover:shadow-[0_0_30px_rgba(16,185,129,0.5)] disabled:opacity-50"
+                         disabled={loadingMsg !== "" || !optimizationInfo.possible}
+                         className="flex-1 py-3 px-6 rounded-xl font-medium text-emerald-950 bg-emerald-500 hover:bg-emerald-400 transition-colors flex items-center justify-center shadow-[0_0_20px_rgba(16,185,129,0.3)] hover:shadow-[0_0_30px_rgba(16,185,129,0.5)] disabled:opacity-30 disabled:grayscale disabled:cursor-not-allowed"
                        >
-                         Approve Structure
+                         {optimizationInfo.possible ? "Approve Structure" : "Already Optimal"}
                        </button>
                     </>
                   )}

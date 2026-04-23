@@ -1,11 +1,3 @@
-import os
-import sys
-
-# Path Injection: Ensure the /api directory is in the Python path before any other imports
-api_dir = os.path.dirname(os.path.abspath(__file__))
-if api_dir not in sys.path:
-    sys.path.append(api_dir)
-
 from typing import Any, List, Dict, Optional
 # Ensure app is defined globally even before the try block to avoid NameErrors
 app = None
@@ -13,6 +5,12 @@ FileAction = Any
 FileObservation = Any
 
 try:
+    import os
+    import sys
+    # Add the current directory to sys.path for Vercel discovery of local modules
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    if current_dir not in sys.path:
+        sys.path.append(current_dir)
 
     from fastapi import FastAPI, Request
     from fastapi.responses import JSONResponse
@@ -198,7 +196,13 @@ def analyze_structure(payload: AnalyzePayload):
     print(f"[Vercel Route] /analyze-structure hit with {len(payload.files)} files.")
     
     system_prompt = (
-        "You are analyzing a nested directory. Your goal is to simplify the hierarchy. "
+        "You are an expert File System Architect. Your goal is to analyze a directory structure and identify 'Normalization Violations'. "
+        "A violation occurs if files of different types are mixed without semantic grouping, if naming is poor, or if nesting is irrational. "
+        "Your task: "
+        "1. Separate file types Semantically (e.g., 'Invoices', 'Assets', 'Scripts'). "
+        "2. Forbid the use of 'Miscellaneous', 'Other', or 'General' as folder names. "
+        "3. Flatten overly deep empty folders and group topics logically. "
+        "4. If the current structure is already optimal according to SQL Normalization principles, maintain it. "
         "Return a JSON object where keys are filenames and values are objects with 'path' and 'reason'."
     )
     user_prompt = f"Analyze these files: {[{'name': f.name, 'rel': f.relative_path} for f in payload.files]}"
@@ -211,8 +215,27 @@ def analyze_structure(payload: AnalyzePayload):
         print("[CRITICAL] Aborting /analyze-structure due to missing API Key.")
         return JSONResponse(status_code=401, content=result)
         
-    print("[Vercel AI] Successfully resolved structure.")
-    return {"structure": result}
+    # Logic to detect optimization possible
+    optimization_possible = False
+    current_map = {f.name: f.relative_path.strip("/").replace(f.name, "").strip("/") for f in payload.files}
+    
+    for fname, meta in result.items():
+        proposed_path = meta.get("path", "").strip("/")
+        current_path = current_map.get(fname, "")
+        if proposed_path != current_path:
+            optimization_possible = True
+            break
+
+    response_data = {
+        "structure": result,
+        "optimization_possible": optimization_possible
+    }
+
+    if not optimization_possible:
+        response_data["message"] = "Structure is already optimized. No changes required."
+
+    print(f"[Vercel AI] Successfully resolved structure. Optimization possible: {optimization_possible}")
+    return response_data
 
 @app.api_route("/{path_name:path}", methods=["GET", "POST", "PUT", "DELETE"])
 async def debug_catch_all(request: Request, path_name: str):
