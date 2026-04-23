@@ -107,41 +107,52 @@ def _apply_heuristic(files_metadata: dict) -> dict:
     from collections import defaultdict
     import os
     counts = defaultdict(int)
+    results = {}
     
-    # Pass 1: Normalize paths and build frequency count
+    # Pass 1: Handle formats and strip filename from path
     for f, m in files_metadata.items():
-        path = m.get("path", "").strip("/")
-        
-        # Rule: If the suggested path ends with the filename, strip it.
-        # (Implementing user's explicit request)
+        # Support both string and dict formats (AI can vary)
+        if isinstance(m, str):
+            path = m.strip("/")
+            meta = {"path": path, "reason": "Categorized"}
+        else:
+            path = m.get("path", "").strip("/")
+            meta = m
+
+        # Rule: Explicitly strip if the path ends with the filename
         if path.endswith(f):
             path = os.path.dirname(path)
             
         parts = [p for p in path.split("/") if p]
         
-        # Additional Rule: No Duplicate Names (folder name matching file name base)
-        base_name = f.split(".")[0].lower()
-        cleaned_parts = [p for p in parts if p.lower() not in base_name and base_name not in p.lower()]
+        # Rule: Filter out any folder part that is similar to the filename
+        # (Preventing TheDip.pdf/TheDip.pdf)
+        base_name = f.split(".")[0].lower().replace(" ", "").replace("-", "")
+        cleaned_parts = []
+        for p in parts:
+            p_clean = p.lower().replace(" ", "").replace("-", "")
+            # If folder is basically a substring of the filename, skip it
+            if p_clean in base_name or base_name in p_clean:
+                continue
+            cleaned_parts.append(p)
         
-        if not cleaned_parts:
-            m["path"] = "Uncategorized"
-        else:
-            # Rule: Limit Depth to 2 for better hierarchy
-            m["path"] = "/".join(cleaned_parts[:2])
-            
-        counts[m["path"]] += 1
+        # Limit Depth to 2 and ensure at least one part exists
+        final_path = "/".join(cleaned_parts[:2]) if cleaned_parts else "Uncategorized"
+        meta["path"] = final_path
+        results[f] = meta
+        counts[final_path] += 1
 
-    # Pass 2: Threshold Grouping (at least 2 files)
-    for f, m in files_metadata.items():
+    # Pass 2: Threshold Grouping (At least 2 files)
+    for f, m in results.items():
         path = m["path"]
         if counts[path] < 2:
             parts = path.split("/")
             if len(parts) > 1:
-                # Move single-file subfolders to the parent level
+                # Move single-file subfolders to parent level
                 m["path"] = parts[0]
-                m["reason"] = m.get("reason", "") + " (Flattened: Single-file category)"
+                m["reason"] = m.get("reason", "") + " (Grouped for density)"
                 
-    return files_metadata
+    return results
 
 def call_hf_inference(system_prompt: str, user_prompt: str, fallback_files: List[str]) -> dict:
     try:
@@ -211,11 +222,13 @@ def analyze_structure(payload: AnalyzePayload):
     print(f"[Vercel Route] /analyze-structure hit with {len(payload.files)} files.")
     
     system_prompt = (
-        "You are an expert file organizer. Your goal is to map filenames to a SIMPLE category string. "
-        "DO NOT include the filename in the category string. "
-        "Example: {'book.pdf': 'Books/Finance'}. "
-        "DO NOT return {'book.pdf': 'Books/Finance/book.pdf'}. "
-        "Forbid catch-all names like 'Miscellaneous' or 'Other'. Group by topic (Assets, Finance, Productivity, etc)."
+        "You are an expert file organizer. Map each filename to a semantic category object.\n"
+        "RULES:\n"
+        "1. Max depth is 2 folders.\n"
+        "2. NEVER include the filename in the category path.\n"
+        "3. Only use a sub-folder if at least 2 files share it.\n"
+        "FORMAT: {'file.pdf': {'path': 'Category/Sub', 'reason': '...'}}\n"
+        "Forbid catch-all names like 'Miscellaneous'."
     )
     user_prompt = f"Analyze these files: {[{'name': f.name, 'rel': f.relative_path} for f in payload.files]}"
     
