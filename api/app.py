@@ -1,3 +1,11 @@
+import os
+import sys
+
+# Path Injection: Ensure the /api directory is in the Python path before any other imports
+api_dir = os.path.dirname(os.path.abspath(__file__))
+if api_dir not in sys.path:
+    sys.path.append(api_dir)
+
 from typing import Any, List, Dict, Optional
 # Ensure app is defined globally even before the try block to avoid NameErrors
 app = None
@@ -5,12 +13,6 @@ FileAction = Any
 FileObservation = Any
 
 try:
-    import os
-    import sys
-    # Add the current directory to sys.path for Vercel discovery of local modules
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    if current_dir not in sys.path:
-        sys.path.append(current_dir)
 
     from fastapi import FastAPI, Request
     from fastapi.responses import JSONResponse
