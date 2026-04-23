@@ -106,26 +106,39 @@ class ReevaluatePayload(BaseModel):
 def _apply_heuristic(files_metadata: dict) -> dict:
     from collections import defaultdict
     counts = defaultdict(int)
+    
+    # Pass 1: Normalize paths and build frequency count
     for f, m in files_metadata.items():
         path = m.get("path", "").strip("/")
-        parts = path.split("/") if path else []
-        if parts:
-            counts[parts[0]] += 1
-            
-    for f, m in files_metadata.items():
-        path = m.get("path", "").strip("/")
-        parts = path.split("/") if path else ["Uncategorized"]
-        top = parts[0]
+        parts = [p for p in path.split("/") if p]
         
-        if counts[top] < 3:
-            m["path"] = f"{top}"
-            m["reason"] = m.get("reason", "") + " (Flattened: <3 files)"
-        elif counts[top] > 10 and len(parts) == 1:
-            m["path"] = f"{top}/General"
-            m["reason"] = m.get("reason", "") + " (Deepened: >10 files)"
+        # Rule 1: No Duplicate Names (folder name matching file name)
+        # We strip segments that are essentially the filename
+        base_name = f.split(".")[0].lower()
+        cleaned_parts = [p for p in parts if p.lower() not in base_name and base_name not in p.lower()]
+        
+        if not cleaned_parts:
+            m["path"] = "Uncategorized"
         else:
-            m["path"] = "/".join(parts)
+            # Rule 2: Limit Depth to 2 for better hierarchy
+            m["path"] = "/".join(cleaned_parts[:2])
             
+        counts[m["path"]] += 1
+
+    # Pass 2: Threshold Grouping (at least 2 files)
+    for f, m in files_metadata.items():
+        path = m["path"]
+        if counts[path] < 2:
+            parts = path.split("/")
+            if len(parts) > 1:
+                # Move single-file subfolders to the parent level
+                m["path"] = parts[0]
+                m["reason"] = m.get("reason", "") + " (Flattened: Single-file category)"
+            elif path != "Uncategorized":
+                # If it's a single file in a top-level folder, move to Uncategorized or keep if broad
+                # For now, we allow broad top-level folders but note them.
+                pass
+                
     return files_metadata
 
 def call_hf_inference(system_prompt: str, user_prompt: str, fallback_files: List[str]) -> dict:
@@ -196,14 +209,11 @@ def analyze_structure(payload: AnalyzePayload):
     print(f"[Vercel Route] /analyze-structure hit with {len(payload.files)} files.")
     
     system_prompt = (
-        "You are an expert File System Architect. Your goal is to analyze a directory structure and identify 'Normalization Violations'. "
-        "A violation occurs if files of different types are mixed without semantic grouping, if naming is poor, or if nesting is irrational. "
-        "Your task: "
-        "1. Separate file types Semantically (e.g., 'Invoices', 'Assets', 'Scripts'). "
-        "2. Forbid the use of 'Miscellaneous', 'Other', or 'General' as folder names. "
-        "3. Flatten overly deep empty folders and group topics logically. "
-        "4. If the current structure is already optimal according to SQL Normalization principles, maintain it. "
-        "Return a JSON object where keys are filenames and values are objects with 'path' and 'reason'."
+        "You are an expert File System Architect. Your goal is to simplify a directory according to the '3 Golden Rules':\n"
+        "1. NO DUPLICATE NAMES: A file must NEVER be in a folder that has the same name as itself.\n"
+        "2. THRESHOLD GROUPING: Only create a sub-category folder (e.g., 'Books/Finance') if there are AT LEAST 2 files that belong there. If only 1 file exists, keep it in the parent category (e.g., 'Books').\n"
+        "3. THE LEAF RULE: Prioritize 'Grouping' over 'Nesting'. Max depth is 2. Files should be 'Leaf Nodes' directly under broad semantic categories.\n"
+        "Forbid catch-all names like 'Miscellaneous' or 'Other'. Return a JSON object where keys are filenames and values are objects with 'path' and 'reason'."
     )
     user_prompt = f"Analyze these files: {[{'name': f.name, 'rel': f.relative_path} for f in payload.files]}"
     
