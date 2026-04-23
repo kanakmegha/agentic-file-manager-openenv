@@ -1,5 +1,7 @@
 # Ensure app is defined globally even before the try block to avoid NameErrors
 app = None
+FileAction = Any
+FileObservation = Any
 
 try:
     from fastapi import FastAPI, Request
