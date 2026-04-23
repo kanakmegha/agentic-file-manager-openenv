@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { File, Folder, Check, Edit2, Play, Sparkles, LogIn, ChevronRight, ChevronDown, Network } from 'lucide-react';
+import BASE_URL from './api';
 
 // Recursive Tree Component for Proposed Architecture
 const TreeView = ({ structure }) => {
@@ -113,8 +114,6 @@ const ChangesetView = ({ log }) => (
     </div>
   </div>
 );
-
-const BASE_URL = "/api";
 
 export default function App() {
   const [directoryHandle, setDirectoryHandle] = useState(null);

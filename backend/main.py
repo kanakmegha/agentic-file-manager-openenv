@@ -11,9 +11,9 @@ try:
     from huggingface_hub import InferenceClient
     from dotenv import load_dotenv
 
-    # Local Relative Imports
-    from .models import FileAction, FileObservation
-    from .env import FileOrganizerEnv
+    # Local Imports
+    from models import FileAction, FileObservation
+    from env import FileOrganizerEnv
 
     load_dotenv(override=True)
 
@@ -44,7 +44,11 @@ except Exception as boot_err:
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        os.environ.get("FRONTEND_URL", "http://localhost:5173"),
+        "http://localhost:5173",
+        "*" # Fallback for Vercel preview URLs
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
