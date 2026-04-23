@@ -17,5 +17,5 @@ COPY . .
 # 4. Standard Port
 EXPOSE 8000
 
-# 5. Start command
+# 5. Start command (pointing to app.py)
 CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]

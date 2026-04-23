@@ -3,15 +3,15 @@
   "rewrites": [
     {
       "source": "/api/(.*)",
-      "destination": "/backend/main.py"
+      "destination": "/backend/app.py"
     },
     {
       "source": "/((?!api/).*)",
-      "destination": "/frontend/$1"
+      "destination": "/frontend/dist/$1"
     }
   ],
   "functions": {
-    "backend/main.py": {
+    "backend/app.py": {
       "runtime": "@vercel/python"
     }
   }
