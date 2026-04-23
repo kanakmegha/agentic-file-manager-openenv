@@ -21,6 +21,8 @@ try:
 
     # Standard FastAPI initialization with root_path for Vercel routing
     app = FastAPI(root_path="/api")
+    
+    print("[Vercel Startup] Booting Semantic File Organizer Backend...")
     # Global persistent environment instance
     env = env_module.FileOrganizerEnv()
 
@@ -119,9 +121,10 @@ def call_hf_inference(system_prompt: str, user_prompt: str, fallback_files: List
         HF_TOKEN = os.environ.get("HF_TOKEN") or os.environ.get("API_KEY")
         
         if not HF_TOKEN:
-            print("[DEBUG] HF_TOKEN missing")
-            return {f: {"path": f.split('.')[0].capitalize(), "reason": "Environment missing HF_TOKEN or API_KEY"} for f in fallback_files}
+            print("[CRITICAL] HF_TOKEN missing in Vercel Settings.")
+            return {"error": "API Key missing in Vercel Settings"}
             
+        print(f"[Vercel AI] Calling InferenceClient for {MODEL_NAME}...")
         # Set timeout in the constructor
         client = InferenceClient(api_key=HF_TOKEN, timeout=30)
         
@@ -133,7 +136,6 @@ def call_hf_inference(system_prompt: str, user_prompt: str, fallback_files: List
             {"role": "user", "content": user_prompt}
         ]
         
-        print(f"[DEBUG HF] Calling InferenceClient for {MODEL_NAME} with 30s timeout...")
         response = client.chat_completion(
             model=MODEL_NAME,
             messages=messages,
@@ -142,7 +144,7 @@ def call_hf_inference(system_prompt: str, user_prompt: str, fallback_files: List
         )
         
         text = response.choices[0].message.content
-        print(f"[DEBUG HF] Raw Response: {text[:200]}...")
+        print(f"[Vercel AI] Raw Response: {text[:200]}...")
         
         # Clean potential markdown or noise
         text = text.strip()
@@ -158,11 +160,12 @@ def call_hf_inference(system_prompt: str, user_prompt: str, fallback_files: List
     except Exception as e:
         import traceback
         traceback.print_exc()
-        print(f"[ERROR HF API] {e}")
+        print(f"[Vercel AI Error] {e}")
         return {f: {"path": f.split('.')[0].capitalize(), "reason": f"API Error: {str(e)}"} for f in fallback_files}
 
 @app.get("/")
 def health_check():
+    print("[Vercel Route] Health Check hit.")
     return {"status": "success", "message": "Semantic File Organizer API is running"}
 
 @app.get("/reset")
@@ -177,23 +180,24 @@ def step(action: FileAction):
 
 @app.post("/analyze-structure")
 def analyze_structure(payload: AnalyzePayload):
-    print(f"[DEBUG analyze-structure] received {len(payload.files)} files.")
+    print(f"[Vercel Route] /analyze-structure hit with {len(payload.files)} files.")
     
     system_prompt = (
         "You are analyzing a nested directory. Your goal is to simplify the hierarchy. "
-        "You can move files from deep subfolders to a shallower normalized folder if it improves fetchability. "
-        "Follow these rules: "
-        "1. 1NF/2NF Logic: Group files into atomic, semantic categories. "
-        "2. Avoid generic names like 'Miscellaneous' or 'General'. "
-        "Return a JSON object where keys are filenames and values are objects with 'path' (the recommended folder path, e.g., 'Finance/Invoices') and 'reason' (normalization reason)."
+        "Return a JSON object where keys are filenames and values are objects with 'path' and 'reason'."
     )
-    user_prompt = f"Analyze and structure these files. Note their current locations: {[{'name': f.name, 'rel': f.relative_path} for f in payload.files]}"
+    user_prompt = f"Analyze these files: {[{'name': f.name, 'rel': f.relative_path} for f in payload.files]}"
     
-    # We pass the list of names for fallback construction
     file_names = [f.name for f in payload.files]
-    content = call_hf_inference(system_prompt, user_prompt, file_names)
-    print("[DEBUG analyze-structure] Successfully resolved structure.")
-    return {"structure": content}
+    result = call_hf_inference(system_prompt, user_prompt, file_names)
+    
+    # Check for missing API Key return
+    if isinstance(result, dict) and "error" in result:
+        print("[CRITICAL] Aborting /analyze-structure due to missing API Key.")
+        return JSONResponse(status_code=401, content=result)
+        
+    print("[Vercel AI] Successfully resolved structure.")
+    return {"structure": result}
 
 @app.api_route("/{path_name:path}", methods=["GET", "POST", "PUT", "DELETE"])
 async def debug_catch_all(request: Request, path_name: str):
