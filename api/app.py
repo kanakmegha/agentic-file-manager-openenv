@@ -33,10 +33,15 @@ try:
     FileAction = models.FileAction
     FileObservation = models.FileObservation
 
-except Exception as boot_err:
+except Exception as e:
     from fastapi import FastAPI
     from fastapi.responses import JSONResponse
     import traceback
+    
+    # Store error details in persistent variables (except variables are cleared in Python 3)
+    boot_err_msg = str(e)
+    boot_err_trace = traceback.format_exc()
+    
     # Redefine app as an emergency debug server
     app = FastAPI()
     @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
@@ -45,8 +50,8 @@ except Exception as boot_err:
             status_code=500,
             content={
                 "status": "boot_error",
-                "message": str(boot_err),
-                "traceback": traceback.format_exc(),
+                "message": boot_err_msg,
+                "traceback": boot_err_trace,
                 "hint": "This error happened during the Python import/startup phase in api/app.py."
             }
         )
