@@ -1,0 +1,10 @@
+{
+  "builds": [
+    { "src": "api/app.py", "use": "@vercel/python" },
+    { "src": "frontend/package.json", "use": "@vercel/static-build" }
+  ],
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "api/app.py" },
+    { "source": "/(.*)", "destination": "/frontend/$1" }
+  ]
+}
