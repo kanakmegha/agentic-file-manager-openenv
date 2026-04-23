@@ -17,8 +17,8 @@ try:
 
     load_dotenv(override=True)
 
-    # Standard FastAPI initialization
-    app = FastAPI()
+    # Standard FastAPI initialization with root_path for Vercel routing
+    app = FastAPI(root_path="/api")
     # Global persistent environment instance
     env = FileOrganizerEnv()
 
