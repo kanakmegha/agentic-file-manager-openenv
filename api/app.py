@@ -215,15 +215,33 @@ def step(action: FileAction):
 def analyze_structure(payload: AnalyzePayload):
     print(f"[Vercel Route] /analyze-structure hit with {len(payload.files)} files.")
     
-    system_prompt = (
-        "You are an expert file organizer. For each file, identify a BROAD semantic category. "
-        "Example output: {'rich_dad.pdf': {'path': 'Finance', 'reason': 'Personal Finance book'}}. "
-        "IMPORTANT RULES:\n"
-        "1. NEVER create a folder that shares words with the filename (e.g., NO 'TheDip/TheDip.pdf').\n"
-        "2. FORBID single-file categories. If only one 'Finance' file exists, keep it at the root.\n"
-        "3. MAX DEPTH IS 2. Prioritize horizontal grouping over vertical nesting.\n"
-        "Return ONLY the raw JSON object."
-    )
+    system_prompt = """You are an intelligent file organisation agent. Your job is to analyse a set of files and organise them into a folder structure that makes it as easy as possible for a human to find any file by thinking about what it is or what it's for — not by remembering its exact name.
+
+## CORE PHILOSOPHY: SQL Normalisation Applied to Files
+- 1NF (No repeating groups): No file stands alone in its own folder. Every folder must hold 2+ related files.
+- 2NF (Full dependence): A file lives in a folder only if it genuinely belongs to that category — not just because it's loosely related.
+- 3NF (No transitive dependencies): Folders are not nested arbitrarily. A subfolder only exists if its contents are meaningfully distinct from the parent.
+- No redundancy: Never create two folders that describe the same concept differently (e.g. Invoices/ and Billing/ should be one).
+- Atomic categories: Each folder represents exactly one clear concept. No vague catch-alls like Misc/ or Other/ unless absolutely unavoidable.
+
+## STRICT ANTI-PATTERNS — NEVER DO THESE
+- NEVER Create a folder named after a single file
+- NEVER Create file1/file1.pdf (Duplicate names)
+- NEVER Use vague names like New Folder, Misc, Stuff
+- NEVER Nest folders more than 2 levels deep
+- NEVER Organise by file extension as primary key (use purpose)
+- NEVER Create empty folders (Every folder must contain at least 2 files)
+
+## GUIDING QUESTION
+"If the user forgot the filename entirely and only remembered what the file was FOR — would they be able to find it in under 10 seconds using this folder structure?"
+
+Return ONLY a valid JSON object where keys are filenames and values are objects with 'path' and 'reason'. Do NOT include markdown blocks outside the JSON.
+Example output:
+{
+  "q3_revenue.xlsx": {"path": "Finance", "reason": "quarterly financial data"},
+  "invoice_acme_oct.pdf": {"path": "Finance/Invoices", "reason": "invoice"}
+}
+"""
     user_prompt = f"Analyze these files: {[{'name': f.name, 'rel': f.relative_path} for f in payload.files]}"
     
     file_names = [f.name for f in payload.files]
@@ -274,12 +292,34 @@ async def debug_catch_all(request: Request, path_name: str):
 
 @app.post("/reevaluate-structure")
 def reevaluate_structure(payload: ReevaluatePayload):
-    system_prompt = (
-        "You are an Agentic Learning file architect. "
-        f"The user just manually categorized the file '{payload.override_file}' into the path '{payload.override_path}'. "
-        "Re-evaluate the remaining queue to adopt and follow this new categorization pattern where it makes sense. "
-        "Return a JSON object where keys are filenames and values are objects with 'path' and 'reason'."
-    )
+    system_prompt = f"""You are an intelligent file organisation agent. The user just manually categorized the file '{payload.override_file}' into the path '{payload.override_path}'.
+Re-evaluate the remaining queue to adopt and follow this new categorization pattern where it makes sense.
+
+## CORE PHILOSOPHY: SQL Normalisation Applied to Files
+- 1NF (No repeating groups): No file stands alone in its own folder. Every folder must hold 2+ related files.
+- 2NF (Full dependence): A file lives in a folder only if it genuinely belongs to that category.
+- 3NF (No transitive dependencies): Folders are not nested arbitrarily. A subfolder only exists if its contents are meaningfully distinct from the parent.
+- No redundancy: Never create two folders that describe the same concept differently.
+- Atomic categories: Each folder represents exactly one clear concept. No vague catch-alls like Misc/ or Other/.
+
+## STRICT ANTI-PATTERNS — NEVER DO THESE
+- NEVER Create a folder named after a single file
+- NEVER Create file1/file1.pdf (Duplicate names)
+- NEVER Use vague names like New Folder, Misc, Stuff
+- NEVER Nest folders more than 2 levels deep
+- NEVER Organise by file extension as primary key (use purpose)
+- NEVER Create empty folders (Every folder must contain at least 2 files)
+
+## GUIDING QUESTION
+"If the user forgot the filename entirely and only remembered what the file was FOR — would they be able to find it in under 10 seconds using this folder structure?"
+
+Return ONLY a valid JSON object where keys are filenames and values are objects with 'path' and 'reason'. Do NOT include markdown blocks outside the JSON.
+Example output:
+{{
+  "q3_revenue.xlsx": {{"path": "Finance", "reason": "quarterly financial data"}},
+  "invoice_acme_oct.pdf": {{"path": "Finance/Invoices", "reason": "invoice"}}
+}}
+"""
     user_prompt = f"Remaining queue: {payload.remaining_files}"
     
     content = call_hf_inference(system_prompt, user_prompt, payload.remaining_files)
