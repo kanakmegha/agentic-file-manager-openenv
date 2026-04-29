@@ -159,7 +159,7 @@ def call_hf_inference(system_prompt: str, user_prompt: str, fallback_files: List
             
         print(f"[Vercel AI] Calling InferenceClient for {MODEL_NAME}...")
         # Set timeout in the constructor
-        client = InferenceClient(api_key=HF_TOKEN, timeout=30)
+        client = InferenceClient(api_key=HF_TOKEN, timeout=90)
         
         # Add strict JSON instruction to the system prompt
         json_instr = "\nReturn ONLY a raw valid JSON object without any markdown formatting, backticks, or preamble."
@@ -176,7 +176,7 @@ def call_hf_inference(system_prompt: str, user_prompt: str, fallback_files: List
             response = client.chat_completion(
                 model=MODEL_NAME,
                 messages=messages,
-                max_tokens=800,
+                max_tokens=2500,
                 temperature=0.1 + (0.1 * attempt) # slight temp increase on retry
             )
             
