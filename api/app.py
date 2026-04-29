@@ -145,6 +145,9 @@ def _apply_heuristic(files_metadata: dict) -> dict:
             if len(parts) > 1:
                 m["path"] = parts[0]
                 m["reason"] = m.get("reason", "") + " (Flattened: Single-file category)"
+            elif path != "Uncategorized":
+                m["path"] = "Uncategorized"
+                m["reason"] = m.get("reason", "") + " (Flattened: Single-file category)"
         
     return files_metadata
 
@@ -164,37 +167,51 @@ def call_hf_inference(system_prompt: str, user_prompt: str, fallback_files: List
         # Add strict JSON instruction to the system prompt
         json_instr = "\nReturn ONLY a raw valid JSON object without any markdown formatting, backticks, or preamble."
         
-        messages = [
-            {"role": "system", "content": system_prompt + json_instr},
-            {"role": "user", "content": user_prompt}
-        ]
+        max_retries = 3
+        current_user_prompt = user_prompt
         
-        response = client.chat_completion(
-            model=MODEL_NAME,
-            messages=messages,
-            max_tokens=800,
-            temperature=0.1
-        )
-        
-        text = response.choices[0].message.content
-        print(f"[Vercel AI] Raw Response: {text[:200]}...")
-        
-        # Clean potential markdown or noise
-        text = text.strip()
-        if text.startswith("```"):
-            import re
-            json_match = re.search(r'\{.*\}', text, re.DOTALL)
-            if json_match:
-                text = json_match.group(0)
+        for attempt in range(max_retries):
+            messages = [
+                {"role": "system", "content": system_prompt + json_instr},
+                {"role": "user", "content": current_user_prompt}
+            ]
             
-        content = json.loads(text)
-        content = _apply_heuristic(content)
-        return content
+            response = client.chat_completion(
+                model=MODEL_NAME,
+                messages=messages,
+                max_tokens=800,
+                temperature=0.1 + (0.1 * attempt) # slight temp increase on retry
+            )
+            
+            text = response.choices[0].message.content
+            print(f"[Vercel AI] Attempt {attempt+1} Raw Response: {text[:200]}...")
+            
+            # Clean potential markdown or noise
+            text = text.strip()
+            if text.startswith("```"):
+                import re
+                json_match = re.search(r'\{.*\}', text, re.DOTALL)
+                if json_match:
+                    text = json_match.group(0)
+                
+            content = json.loads(text)
+            content = _apply_heuristic(content)
+            
+            # Validation Check: Cluster count vs File count
+            if len(fallback_files) > 1:
+                unique_folders = set(m.get("path", "").strip("/") for m in content.values() if m.get("path", "").strip("/") != "Uncategorized")
+                if len(unique_folders) >= len(fallback_files) and attempt < max_retries - 1:
+                    print(f"[Vercel AI] Validation Failed: {len(unique_folders)} folders for {len(fallback_files)} files. Retrying...")
+                    current_user_prompt += "\n\nCRITICAL FEEDBACK ON PREVIOUS ATTEMPT: Your previous attempt over-normalised by creating too many folders. The number of folders proposed was equal to or greater than the number of files. You MUST use FEWER, BROADER categories. The clusters ARE the folders. Do not create single-file folders."
+                    continue
+                    
+            return content
     except Exception as e:
         import traceback
         traceback.print_exc()
         print(f"[Vercel AI Error] {e}")
-        return {f: {"path": f.split('.')[0].capitalize(), "reason": f"API Error: {str(e)}"} for f in fallback_files}
+        # The core bug was here! It was generating singleton folders for every file when the API failed.
+        return {f: {"path": "Uncategorized", "reason": f"API Error: {str(e)}"} for f in fallback_files}
 
 @app.get("/")
 def health_check():
