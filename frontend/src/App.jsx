@@ -142,8 +142,7 @@ export default function App() {
   const [optimizationInfo, setOptimizationInfo] = useState({ possible: true, message: "" });
   const [analysisError, setAnalysisError] = useState("");
 
-  const getFilesRecursively = async (dirHandle, relPath = '', currentDepth = 0, maxDepth = 4) => {
-    if (currentDepth > maxDepth) return [];
+  const getFilesRecursively = async (dirHandle, relPath = '') => {
     let files = [];
     for await (const entry of dirHandle.values()) {
       if (entry.kind === 'file') {
@@ -159,7 +158,7 @@ export default function App() {
           continue; // skip noise
         }
         const nextRelPath = relPath ? `${relPath}/${entry.name}` : entry.name;
-        const subFiles = await getFilesRecursively(entry, nextRelPath, currentDepth + 1, maxDepth);
+        const subFiles = await getFilesRecursively(entry, nextRelPath);
         files = files.concat(subFiles);
       }
     }
