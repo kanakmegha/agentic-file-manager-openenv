@@ -200,7 +200,7 @@ export default function App() {
       }
       
       if (fileEntries.length > 500) {
-        const proceed = window.confirm(`⚠️ This folder contains ${fileEntries.length} files. \nThey will be analyzed progressively in chunks of 100 files to ensure stability.\nPress OK to Continue, or Cancel to choose a subdirectory.`);
+        const proceed = window.confirm(`⚠️ This folder contains ${fileEntries.length} files. \nThey will be analyzed progressively in chunks of 25 files to ensure stability on Vercel's 10-second timeout limit.\nPress OK to Continue, or Cancel to choose a subdirectory.`);
         if (!proceed) {
            setDirectoryHandle(null);
            setLoadingMsg("");
@@ -211,7 +211,7 @@ export default function App() {
       setUnsortedFiles(fileEntries);
       const payload = fileEntries.map(f => ({ name: f.name, relative_path: f.relative_path }));
       
-      const chunkSize = 100;
+      const chunkSize = 25;
       let accumulatedStructure = {};
       let contextFolders = [];
       
