@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { File, Folder, Check, Edit2, Play, Sparkles, LogIn, ChevronRight, ChevronDown, Network } from 'lucide-react';
+import { File, Folder, Check, Edit2, Play, Sparkles, LogIn, ChevronRight, ChevronDown, Network, AlertCircle } from 'lucide-react';
 import BASE_URL from './api';
 
 // Recursive Tree Component for Proposed Architecture
@@ -116,6 +116,14 @@ const ChangesetView = ({ log }) => (
   </div>
 );
 
+const BLOCKED_DIRS = new Set([
+  'node_modules', '.git', '.svn', 'build', 'dist', 'out',
+  '.next', '__pycache__', '.venv', 'venv', 'env', '.env',
+  'vendor', 'coverage', '.cache', '.turbo', 'target',
+  '.gradle', '.idea', '.vscode', 'Pods', 'DerivedData',
+  '.pytest_cache', 'eggs', '.eggs', 'wheels', 'htmlcov'
+]);
+
 export default function App() {
   const [directoryHandle, setDirectoryHandle] = useState(null);
   const [unsortedFiles, setUnsortedFiles] = useState([]); // array of file objects
@@ -132,8 +140,10 @@ export default function App() {
   const [loadingMsg, setLoadingMsg] = useState("");
   const [executionLog, setExecutionLog] = useState([]);
   const [optimizationInfo, setOptimizationInfo] = useState({ possible: true, message: "" });
+  const [analysisError, setAnalysisError] = useState("");
 
-  const getFilesRecursively = async (dirHandle, relPath = '') => {
+  const getFilesRecursively = async (dirHandle, relPath = '', currentDepth = 0, maxDepth = 4) => {
+    if (currentDepth > maxDepth) return [];
     let files = [];
     for await (const entry of dirHandle.values()) {
       if (entry.kind === 'file') {
@@ -145,8 +155,11 @@ export default function App() {
           name: entry.name 
         });
       } else if (entry.kind === 'directory') {
+        if (BLOCKED_DIRS.has(entry.name) || entry.name.startsWith('.')) {
+          continue; // skip noise
+        }
         const nextRelPath = relPath ? `${relPath}/${entry.name}` : entry.name;
-        const subFiles = await getFilesRecursively(entry, nextRelPath);
+        const subFiles = await getFilesRecursively(entry, nextRelPath, currentDepth + 1, maxDepth);
         files = files.concat(subFiles);
       }
     }
@@ -157,18 +170,31 @@ export default function App() {
     try {
       const dirHandle = await window.showDirectoryPicker({ mode: 'read' });
       setDirectoryHandle(dirHandle);
+      setAnalysisError("");
       
       const fileEntries = await getFilesRecursively(dirHandle);
-      setUnsortedFiles(fileEntries);
       
-      if (fileEntries.length > 0) {
-        setLoadingMsg("Analyzing entire structure...");
-        const payload = fileEntries.map(f => ({ name: f.name, relative_path: f.relative_path }));
-        await fetchStructureAnalysis(payload);
+      if (fileEntries.length === 0) {
+        alert("Analysis returned an empty plan. This usually means the folder contains only build artifacts or the structure is too deep. Try pointing to a subdirectory.");
+        setDirectoryHandle(null);
         setLoadingMsg("");
-      } else {
-        setIsFinished(true);
+        return;
       }
+      
+      if (fileEntries.length > 500) {
+        const proceed = window.confirm(`⚠️ This folder contains ${fileEntries.length} files. \nScanning may take a while and could include build artifacts.\nRecommended: point to a specific subdirectory instead of the root.\nPress OK to Continue anyway, or Cancel to choose a subdirectory.`);
+        if (!proceed) {
+           setDirectoryHandle(null);
+           setLoadingMsg("");
+           return;
+        }
+      }
+
+      setUnsortedFiles(fileEntries);
+      setLoadingMsg("Analyzing entire structure...");
+      const payload = fileEntries.map(f => ({ name: f.name, relative_path: f.relative_path }));
+      await fetchStructureAnalysis(payload);
+      setLoadingMsg("");
     } catch (e) {
       console.error(e);
       if (e.name !== 'AbortError') {
@@ -179,18 +205,23 @@ export default function App() {
   };
 
   const fetchStructureAnalysis = async (fileNames) => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 90000); // 90s timeout
     try {
       const url = `${BASE_URL}/analyze-structure`;
       console.log('Fetching from:', url);
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ files: fileNames })
+        body: JSON.stringify({ files: fileNames }),
+        signal: controller.signal
       });
+      clearTimeout(timeoutId);
       if (!res.ok) {
         console.error("Server returned status:", res.status);
         const text = await res.text();
         console.error("Response body:", text);
+        setAnalysisError(`Server Error: ${res.status}`);
         setAnalyzedStructure({});
         return;
       }
@@ -198,6 +229,7 @@ export default function App() {
       const textResponse = await res.text();
       if (!textResponse) {
          console.warn("Empty response from server");
+         setAnalysisError("Empty response from server");
          setAnalyzedStructure({});
          return;
       }
@@ -215,10 +247,18 @@ export default function App() {
          }
       } catch (e) {
          console.error("JSON parse error:", e, "Payload:", textResponse.substring(0, 200));
+         setAnalysisError("Failed to parse analysis response.");
          setAnalyzedStructure({});
       }
     } catch (e) {
+      clearTimeout(timeoutId);
+      if (e.name === 'AbortError') {
+         setAnalysisError("Analysis timed out. The folder structure may be too large or complex.");
+      } else {
+         setAnalysisError(`Error fetching structure analysis: ${e.message}`);
+      }
       console.error("Fetch error:", e);
+      setAnalyzedStructure({});
     }
   };
 
@@ -434,7 +474,9 @@ export default function App() {
         <div className="mb-6">
           <h2 className="text-xs uppercase tracking-wider text-indigo-500 font-semibold mb-3">Proposed Architecture</h2>
           <div className="bg-neutral-950/50 rounded-xl p-3 border border-neutral-800/50 min-h-[100px]">
-             {Object.keys(analyzedStructure).length === 0 ? (
+             {analysisError ? (
+               <div className="text-rose-500 text-sm font-medium mt-3 text-center p-2 bg-rose-500/10 rounded-md border border-rose-500/20">{analysisError}</div>
+             ) : Object.keys(analyzedStructure).length === 0 ? (
                <p className="text-sm text-neutral-500 italic text-center mt-3">Analyzing structure...</p>
              ) : (
                <TreeView structure={buildTree(stagedState, analyzedStructure)} />
@@ -476,7 +518,28 @@ export default function App() {
         )}
 
         <AnimatePresence mode="wait">
-          {!isFinished && currentFileObj ? (
+          {analysisError ? (
+            <motion.div
+              key="error"
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="w-full max-w-2xl bg-neutral-900/50 border border-rose-500/20 backdrop-blur-xl rounded-2xl p-10 shadow-2xl text-center"
+            >
+              <div className="w-12 h-12 bg-rose-500/10 rounded-full flex items-center justify-center mx-auto mb-6">
+                <AlertCircle className="w-6 h-6 text-rose-500" />
+              </div>
+              <h2 className="text-3xl font-semibold mb-4 text-white">Analysis Failed</h2>
+              <p className="text-neutral-400 mb-8 max-w-md mx-auto">
+                {analysisError}
+              </p>
+              <button 
+                onClick={() => window.location.reload()}
+                className="py-3 px-8 rounded-xl font-medium text-white bg-neutral-800 hover:bg-neutral-700 transition-colors border border-neutral-700"
+              >
+                Start Over
+              </button>
+            </motion.div>
+          ) : !isFinished && currentFileObj && Object.keys(analyzedStructure).length > 0 ? (
             <motion.div
               key={currentFileObj.path}
               initial={{ opacity: 0, y: 20, scale: 0.95 }}
