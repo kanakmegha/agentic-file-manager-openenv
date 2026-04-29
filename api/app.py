@@ -145,9 +145,6 @@ def _apply_heuristic(files_metadata: dict) -> dict:
             if len(parts) > 1:
                 m["path"] = parts[0]
                 m["reason"] = m.get("reason", "") + " (Flattened: Single-file category)"
-            elif path != "Uncategorized":
-                m["path"] = "Uncategorized"
-                m["reason"] = m.get("reason", "") + " (Flattened: Single-file category)"
         
     return files_metadata
 
@@ -196,15 +193,48 @@ def call_hf_inference(system_prompt: str, user_prompt: str, fallback_files: List
                 
             content = json.loads(text)
             content = _apply_heuristic(content)
-            
-            # Validation Check: Cluster count vs File count
-            if len(fallback_files) > 1:
-                unique_folders = set(m.get("path", "").strip("/") for m in content.values() if m.get("path", "").strip("/") != "Uncategorized")
-                if len(unique_folders) >= len(fallback_files) and attempt < max_retries - 1:
-                    print(f"[Vercel AI] Validation Failed: {len(unique_folders)} folders for {len(fallback_files)} files. Retrying...")
-                    current_user_prompt += "\n\nCRITICAL FEEDBACK ON PREVIOUS ATTEMPT: Your previous attempt over-normalised by creating too many folders. The number of folders proposed was equal to or greater than the number of files. You MUST use FEWER, BROADER categories. The clusters ARE the folders. Do not create single-file folders."
+            # Validation Check
+            if attempt < max_retries - 1:
+                banned_names = {"uncategorized", "misc", "other", "general"}
+                used_banned = False
+                for m in content.values():
+                    folder_name = m.get("path", "").strip("/").lower()
+                    if folder_name in banned_names:
+                        used_banned = True
+                        break
+                
+                if used_banned:
+                    print("[Vercel AI] Validation Failed: Used banned catch-all folder name. Retrying...")
+                    current_user_prompt += "\n\nCRITICAL FEEDBACK ON PREVIOUS ATTEMPT: You used a banned catch-all folder name like Uncategorized, Misc, Other, or General. This is strictly forbidden. Keep clustering until every file has a real, named home."
                     continue
+
+                if len(fallback_files) > 1:
+                    unique_folders = set(m.get("path", "").strip("/") for m in content.values())
+                    if len(unique_folders) >= len(fallback_files):
+                        print(f"[Vercel AI] Validation Failed: {len(unique_folders)} folders for {len(fallback_files)} files. Retrying...")
+                        current_user_prompt += "\n\nCRITICAL FEEDBACK ON PREVIOUS ATTEMPT: Your previous attempt over-normalised by creating too many folders. The number of folders proposed was equal to or greater than the number of files. You MUST use FEWER, BROADER categories. The clusters ARE the folders. Do not create single-file folders."
+                        continue
+                        
+                    # Singleton check
+                    from collections import defaultdict
+                    counts = defaultdict(int)
+                    for m in content.values(): counts[m.get("path", "").strip("/")] += 1
                     
+                    has_singletons = any(count == 1 for count in counts.values())
+                    if has_singletons and len(fallback_files) >= 10:
+                        print("[Vercel AI] Validation Failed: Created singleton folders in a large dataset. Retrying...")
+                        current_user_prompt += "\n\nCRITICAL FEEDBACK ON PREVIOUS ATTEMPT: You created folders that contain only 1 file. Since there are 10 or more files, this is not allowed. Group singletons into broader categories."
+                        continue
+            
+            # Post-validation (if attempt passed or max retries reached)
+            from collections import defaultdict
+            counts = defaultdict(int)
+            for m in content.values(): counts[m.get("path", "").strip("/")] += 1
+            if len(fallback_files) < 10:
+                for f, m in content.items():
+                    if counts[m.get("path", "").strip("/")] == 1:
+                        m["reason"] = "[WARNING: Singleton category] " + m.get("reason", "")
+            
             return content
     except Exception as e:
         import traceback
@@ -244,10 +274,13 @@ def analyze_structure(payload: AnalyzePayload):
 ## STRICT ANTI-PATTERNS — NEVER DO THESE
 - NEVER Create a folder named after a single file
 - NEVER Create file1/file1.pdf (Duplicate names)
-- NEVER Use vague names like New Folder, Misc, Stuff
+- NEVER Use banned catch-all names: Uncategorized, Misc, Other, General
 - NEVER Nest folders more than 2 levels deep
 - NEVER Organise by file extension as primary key (use purpose)
 - NEVER Create empty folders (Every folder must contain at least 2 files)
+
+## PRESERVE EXISTING OPTIMAL FOLDERS
+If a folder already contains 2+ meaningfully related files and has a purposeful name, you MUST keep those files in that folder. Only fix what is broken.
 
 ## GUIDING QUESTION
 "If the user forgot the filename entirely and only remembered what the file was FOR — would they be able to find it in under 10 seconds using this folder structure?"
@@ -259,8 +292,42 @@ Example output:
   "invoice_acme_oct.pdf": {"path": "Finance/Invoices", "reason": "invoice"}
 }
 """
-    user_prompt = f"Analyze these files: {[{'name': f.name, 'rel': f.relative_path} for f in payload.files]}"
+    # Pre-Evaluate Existing Structure
+    from collections import defaultdict
+    current_map = {f.name: f.relative_path.strip("/").replace(f.name, "").strip("/") for f in payload.files}
+    counts = defaultdict(int)
+    for path in current_map.values():
+        if path: counts[path] += 1
+        
+    banned_names = {"uncategorized", "misc", "other", "general"}
+    optimal_folders = []
+    has_banned_folders = False
+    has_singletons = False
     
+    for path, count in counts.items():
+        if path.lower() in banned_names:
+            has_banned_folders = True
+        elif count >= 2:
+            optimal_folders.append(path)
+        else:
+            has_singletons = True
+            
+    # Check if every file is in an optimal folder
+    unplaced_files = sum(1 for p in current_map.values() if not p)
+    is_fully_optimal = len(optimal_folders) > 0 and not has_banned_folders and not has_singletons and unplaced_files == 0
+    
+    if is_fully_optimal:
+        print("[Vercel AI] Pre-Evaluation: Structure is already optimal. Short-circuiting.")
+        return {
+            "structure": {f.name: {"path": current_map[f.name], "reason": "Already optimally placed."} for f in payload.files},
+            "optimization_possible": False,
+            "message": "✅ No changes required. The current folder structure is already optimally organised."
+        }
+        
+    user_prompt = f"Analyze these files: {[{'name': f.name, 'rel': f.relative_path} for f in payload.files]}"
+    if optimal_folders:
+        user_prompt += f"\n\nCRITICAL INSTRUCTION: The following folders are already optimal and MUST BE PRESERVED: {optimal_folders}. Keep any files currently in those folders exactly where they are."
+
     file_names = [f.name for f in payload.files]
     result = call_hf_inference(system_prompt, user_prompt, file_names)
     
@@ -271,7 +338,6 @@ Example output:
         
     # Logic to detect optimization possible
     optimization_possible = False
-    current_map = {f.name: f.relative_path.strip("/").replace(f.name, "").strip("/") for f in payload.files}
     
     for fname, meta in result.items():
         proposed_path = meta.get("path", "").strip("/")
@@ -322,10 +388,13 @@ Re-evaluate the remaining queue to adopt and follow this new categorization patt
 ## STRICT ANTI-PATTERNS — NEVER DO THESE
 - NEVER Create a folder named after a single file
 - NEVER Create file1/file1.pdf (Duplicate names)
-- NEVER Use vague names like New Folder, Misc, Stuff
+- NEVER Use banned catch-all names: Uncategorized, Misc, Other, General
 - NEVER Nest folders more than 2 levels deep
 - NEVER Organise by file extension as primary key (use purpose)
 - NEVER Create empty folders (Every folder must contain at least 2 files)
+
+## PRESERVE EXISTING OPTIMAL FOLDERS
+If a folder already contains 2+ meaningfully related files and has a purposeful name, you MUST keep those files in that folder. Only fix what is broken.
 
 ## GUIDING QUESTION
 "If the user forgot the filename entirely and only remembered what the file was FOR — would they be able to find it in under 10 seconds using this folder structure?"
