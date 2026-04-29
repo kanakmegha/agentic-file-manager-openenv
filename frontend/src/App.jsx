@@ -124,6 +124,13 @@ const BLOCKED_DIRS = new Set([
   '.pytest_cache', 'eggs', '.eggs', 'wheels', 'htmlcov'
 ]);
 
+const PROJECT_INDICATORS = new Set([
+  'package.json', 'requirements.txt', 'pom.xml', 'build.gradle', 
+  'Cargo.toml', 'go.mod', 'manage.py', 'Makefile', 
+  'docker-compose.yml', 'tsconfig.json', 'composer.json', 
+  'Gemfile', 'setup.py', 'yarn.lock', 'package-lock.json'
+]);
+
 export default function App() {
   const [directoryHandle, setDirectoryHandle] = useState(null);
   const [unsortedFiles, setUnsortedFiles] = useState([]); // array of file objects
@@ -143,8 +150,20 @@ export default function App() {
   const [analysisError, setAnalysisError] = useState("");
 
   const getFilesRecursively = async (dirHandle, relPath = '') => {
-    let files = [];
+    let entries = [];
     for await (const entry of dirHandle.values()) {
+      entries.push(entry);
+    }
+    
+    // Check if this directory looks like a coding project root
+    const isCodingProject = entries.some(entry => PROJECT_INDICATORS.has(entry.name));
+    if (isCodingProject) {
+      console.warn(`Skipping coding project folder: ${relPath || dirHandle.name}`);
+      return [];
+    }
+
+    let files = [];
+    for (const entry of entries) {
       if (entry.kind === 'file') {
         const fullRelPath = relPath ? `${relPath}/${entry.name}` : entry.name;
         files.push({ 
