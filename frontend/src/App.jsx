@@ -181,7 +181,7 @@ export default function App() {
       }
       
       if (fileEntries.length > 500) {
-        const proceed = window.confirm(`⚠️ This folder contains ${fileEntries.length} files. \nScanning may take a while and could include build artifacts.\nRecommended: point to a specific subdirectory instead of the root.\nPress OK to Continue anyway, or Cancel to choose a subdirectory.`);
+        const proceed = window.confirm(`⚠️ This folder contains ${fileEntries.length} files. \nThey will be analyzed progressively in chunks of 100 files to ensure stability.\nPress OK to Continue, or Cancel to choose a subdirectory.`);
         if (!proceed) {
            setDirectoryHandle(null);
            setLoadingMsg("");
@@ -190,9 +190,48 @@ export default function App() {
       }
 
       setUnsortedFiles(fileEntries);
-      setLoadingMsg("Analyzing entire structure...");
       const payload = fileEntries.map(f => ({ name: f.name, relative_path: f.relative_path }));
-      await fetchStructureAnalysis(payload);
+      
+      const chunkSize = 100;
+      let accumulatedStructure = {};
+      let contextFolders = [];
+      
+      for (let i = 0; i < payload.length; i += chunkSize) {
+         const chunk = payload.slice(i, i + chunkSize);
+         const chunkNum = Math.floor(i / chunkSize) + 1;
+         const totalChunks = Math.ceil(payload.length / chunkSize);
+         
+         if (totalChunks > 1) {
+            setLoadingMsg(`Analyzing chunk ${chunkNum} of ${totalChunks}...`);
+         } else {
+            setLoadingMsg("Analyzing entire structure...");
+         }
+         
+         const chunkResult = await fetchStructureAnalysis(chunk, contextFolders);
+         if (!chunkResult) {
+            // Error occurred. Assign to Uncategorized with API timeout reason
+            chunk.forEach(f => {
+               accumulatedStructure[f.name] = { path: "Uncategorized", reason: "API Error or Timeout during chunk processing" };
+            });
+            setAnalysisError(""); // Clear global error to continue processing
+         } else {
+            accumulatedStructure = { ...accumulatedStructure, ...(chunkResult.structure || {}) };
+            // Extract unique folders to pass as context
+            const newFolders = Object.values(chunkResult.structure || {})
+              .map(v => (v.path || "").split("/")[0])
+              .filter(p => p && p.toLowerCase() !== "uncategorized");
+            contextFolders = [...new Set([...contextFolders, ...newFolders])];
+            
+            if (chunkResult.optimization_possible === false) {
+               setOptimizationInfo({ possible: false, message: chunkResult.message || "Structure is already optimized." });
+            } else {
+               setOptimizationInfo({ possible: true, message: "" });
+            }
+         }
+         
+         setAnalyzedStructure(accumulatedStructure); // Progressive UI update
+      }
+      
       setLoadingMsg("");
     } catch (e) {
       console.error(e);
@@ -203,7 +242,7 @@ export default function App() {
     }
   };
 
-  const fetchStructureAnalysis = async (fileNames) => {
+  const fetchStructureAnalysis = async (fileNames, contextFolders = []) => {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 90000); // 90s timeout
     try {
@@ -212,7 +251,7 @@ export default function App() {
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ files: fileNames }),
+        body: JSON.stringify({ files: fileNames, context_folders: contextFolders }),
         signal: controller.signal
       });
       clearTimeout(timeoutId);
@@ -221,33 +260,22 @@ export default function App() {
         const text = await res.text();
         console.error("Response body:", text);
         setAnalysisError(`Server Error: ${res.status}`);
-        setAnalyzedStructure({});
-        return;
+        return null;
       }
       
       const textResponse = await res.text();
       if (!textResponse) {
          console.warn("Empty response from server");
          setAnalysisError("Empty response from server");
-         setAnalyzedStructure({});
-         return;
+         return null;
       }
       
       try {
-         const data = JSON.parse(textResponse);
-         setAnalyzedStructure(data.structure || {});
-         if (data.optimization_possible === false) {
-           setOptimizationInfo({ 
-             possible: false, 
-             message: data.message || "Structure is already optimized." 
-           });
-         } else {
-           setOptimizationInfo({ possible: true, message: "" });
-         }
+         return JSON.parse(textResponse);
       } catch (e) {
          console.error("JSON parse error:", e, "Payload:", textResponse.substring(0, 200));
          setAnalysisError("Failed to parse analysis response.");
-         setAnalyzedStructure({});
+         return null;
       }
     } catch (e) {
       clearTimeout(timeoutId);
@@ -257,7 +285,7 @@ export default function App() {
          setAnalysisError(`Error fetching structure analysis: ${e.message}`);
       }
       console.error("Fetch error:", e);
-      setAnalyzedStructure({});
+      return null;
     }
   };
 

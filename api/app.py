@@ -97,7 +97,7 @@ class FileEntry(BaseModel):
 
 class AnalyzePayload(BaseModel):
     files: List[FileEntry]
-
+    context_folders: List[str] = []
 class ReevaluatePayload(BaseModel):
     remaining_files: List[str]
     override_file: str
@@ -300,7 +300,7 @@ Example output:
         if path: counts[path] += 1
         
     banned_names = {"uncategorized", "misc", "other", "general"}
-    optimal_folders = []
+    optimal_folders = list(set(payload.context_folders)) if payload.context_folders else []
     has_banned_folders = False
     has_singletons = False
     
@@ -308,7 +308,8 @@ Example output:
         if path.lower() in banned_names:
             has_banned_folders = True
         elif count >= 2:
-            optimal_folders.append(path)
+            if path not in optimal_folders:
+                optimal_folders.append(path)
         else:
             has_singletons = True
             
